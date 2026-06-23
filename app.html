@@ -65,6 +65,17 @@
   .bucket.today .n{color:var(--accent-d);}
   @media(max-width:760px){.buckets{grid-template-columns:1fr 1fr;}}
 
+  /* Tabs (Home + follow-up buckets) */
+  .tabs{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;}
+  .tab{display:flex;align-items:center;gap:8px;background:#fff;border:1.5px solid var(--line);border-radius:11px;padding:9px 14px;font:inherit;font-weight:600;font-size:14px;color:var(--ink);cursor:pointer;}
+  .tab:hover{border-color:var(--accent);}
+  .tab.on{background:var(--ink);color:#fff;border-color:var(--ink);}
+  .tab .cnt{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:20px;padding:0 6px;border-radius:99px;background:#eceef4;color:var(--ink-soft);font-size:12px;}
+  .tab.on .cnt{background:rgba(255,255,255,.22);color:#fff;}
+  .tab.overdue .cnt{background:#fdecea;color:var(--err);}
+  .tab.today .cnt{background:rgba(239,122,69,.16);color:var(--accent-d);}
+  .tab.on.overdue .cnt,.tab.on.today .cnt{background:rgba(255,255,255,.22);color:#fff;}
+
   .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px;}
   .toolbar input[type=text],.toolbar select{font:inherit;border:1.5px solid var(--line);border-radius:10px;padding:9px 12px;background:#fff;}
   .toolbar input[type=text]{flex:1;min-width:170px;}
@@ -239,16 +250,31 @@ function buildNav(){
 }
 
 // ---------- Date helpers ----------
-function parseDMY(s){ if(!s) return null; const m=String(s).match(/(\d{2})\/(\d{2})\/(\d{4})/); if(!m) return null; return new Date(+m[3],+m[2]-1,+m[1]); }
+function pad(n){ return String(n).padStart(2,'0'); }
+function toDate(v){
+  if(!v) return null;
+  if(v instanceof Date) return isNaN(v)?null:v;
+  v=String(v);
+  if(/^\d{4}-\d{2}-\d{2}T/.test(v)){ const d=new Date(v); return isNaN(d)?null:d; }
+  const m=v.match(/(\d{2})\/(\d{2})\/(\d{4})(?:[ ,]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+  if(m) return new Date(+m[3],+m[2]-1,+m[1],+(m[4]||0),+(m[5]||0),+(m[6]||0));
+  const d=new Date(v); return isNaN(d)?null:d;
+}
 function startOfDay(d){ return new Date(d.getFullYear(),d.getMonth(),d.getDate()); }
-function bucketOf(dateStr){
-  const d=parseDMY(dateStr); if(!d) return 'none';
+function fmtDT(v){
+  const d=toDate(v); if(!d) return '';
+  const base=pad(d.getDate())+'/'+pad(d.getMonth()+1)+'/'+d.getFullYear();
+  const hasTime=(d.getHours()||d.getMinutes()||d.getSeconds());
+  return hasTime ? base+' '+pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds()) : base;
+}
+function bucketOf(v){
+  const d=toDate(v); if(!d) return 'none';
   const today=startOfDay(new Date()); const diff=Math.round((startOfDay(d)-today)/86400000);
   if(diff<0) return 'overdue'; if(diff===0) return 'today'; if(diff===1) return 'tomorrow'; if(diff===2) return 'dayafter'; return 'later';
 }
-function isoToDMY(iso){ if(!iso) return ''; const p=iso.split('-'); return p[2]+'/'+p[1]+'/'+p[0]; }
-function dmyToIso(dmy){ const m=String(dmy||'').match(/(\d{2})\/(\d{2})\/(\d{4})/); return m?m[3]+'-'+m[2]+'-'+m[1]:''; }
-function plusDaysDMY(n){ const d=new Date(); d.setDate(d.getDate()+n); const p=x=>String(x).padStart(2,'0'); return p(d.getDate())+'/'+p(d.getMonth()+1)+'/'+d.getFullYear(); }
+function toDatetimeLocal(v){ const d=toDate(v); if(!d) return ''; return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes()); }
+function dtLocalToDMY(s){ const m=String(s||'').match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/); return m?(m[3]+'/'+m[2]+'/'+m[1]+' '+m[4]+':'+m[5]+':00'):''; }
+function plusDaysDMY(n){ const d=new Date(); d.setDate(d.getDate()+n); return pad(d.getDate())+'/'+pad(d.getMonth()+1)+'/'+d.getFullYear(); }
 
 // next planned preview (server is authoritative; this is for instant UI)
 function computeNext(stage,status,manualDMY){
@@ -280,11 +306,17 @@ function renderStage(sys){
   const stageLabel={lead:'Lead',zoom:'Zoom',out:'Onboarding'}[sys.type];
   let html='';
   html+='<div class="head"><h1>'+esc(sys.label)+'</h1><span class="sub">'+rows.length+' clients in this system</span><span class="spacer"></span></div>';
-  html+='<div class="buckets">'+bucketCard('overdue','Overdue',c.overdue)+bucketCard('today','Today',c.today)+bucketCard('tomorrow','Tomorrow',c.tomorrow)+bucketCard('dayafter','Day After',c.dayafter)+'</div>';
-  html+='<div class="toolbar"><input type="text" id="search" placeholder="Search name, email, phone, city…" value="'+esc(searchText)+'"><select id="bsel"><option value="">All follow-ups</option><option value="overdue">Overdue</option><option value="today">Today</option><option value="tomorrow">Tomorrow</option><option value="dayafter">Day After</option><option value="later">Later</option><option value="none">No date</option></select><button class="btn ghost sm" id="refreshBtn">↻ Refresh</button><button class="btn dark sm" id="exportBtn">Export CSV</button></div>';
+  html+='<div class="tabs">'
+    +stageTab('','Home',rows.length)
+    +stageTab('overdue','Overdue',c.overdue)
+    +stageTab('today','Today',c.today)
+    +stageTab('tomorrow','Tomorrow',c.tomorrow)
+    +stageTab('dayafter','Day After',c.dayafter)
+    +'</div>';
+  html+='<div class="toolbar"><input type="text" id="search" placeholder="Search name, email, phone, city…" value="'+esc(searchText)+'"><button class="btn ghost sm" id="refreshBtn">↻ Refresh</button><button class="btn dark sm" id="exportBtn">Export CSV</button></div>';
 
   let list=filterRows(rows);
-  list.sort((a,b)=>{const x=parseDMY(a['Next Planned Date'])||8e15,y=parseDMY(b['Next Planned Date'])||8e15;return x-y;});
+  list.sort((a,b)=>{const x=toDate(a['Next Planned Date']),y=toDate(b['Next Planned Date']);return (x?x.getTime():8e15)-(y?y.getTime():8e15);});
 
   // table head per stage
   let cols;
@@ -304,8 +336,9 @@ function renderStage(sys){
 }
 
 function bucketCard(key,label,n){ const on=(bucketFilter===key)?' on':''; return '<div class="bucket '+key+on+'" data-b="'+key+'"><div class="lbl">'+label+'</div><div class="n">'+n+'</div></div>'; }
+function stageTab(key,label,n){ const on=(bucketFilter===key)?' on':''; return '<button class="tab '+key+on+'" data-b="'+key+'">'+label+'<span class="cnt">'+n+'</span></button>'; }
 
-function dateCell(s){ const b=bucketOf(s); return '<span class="date'+(b==='overdue'?' over':'')+'">'+esc(s||'—')+'</span>'; }
+function dateCell(s){ const b=bucketOf(s); return '<span class="date'+(b==='overdue'?' over':'')+'">'+esc(fmtDT(s)||'—')+'</span>'; }
 function meetPill(v){ v=(v||'').trim(); if(!v)return'—'; const map={Yes:'green',Maybe:'orange',No:'grey'}; return '<span class="pill '+(map[v]||'blue')+'">'+esc(v)+'</span>'; }
 
 function rowHtml(sys,r){
@@ -346,10 +379,9 @@ function filterRows(rows){
 }
 
 function wireStage(sys){
-  document.querySelectorAll('.bucket').forEach(b=>b.addEventListener('click',()=>{bucketFilter=(bucketFilter===b.dataset.b)?'':b.dataset.b;render();}));
-  const s=document.getElementById('search'); if(s) s.addEventListener('input',()=>{searchText=s.value;const list=filterRows(rowsFor(sys));/* light re-render */render();s2focus();});
+  document.querySelectorAll('.tab').forEach(b=>b.addEventListener('click',()=>{bucketFilter=b.dataset.b;render();}));
+  const s=document.getElementById('search'); if(s) s.addEventListener('input',()=>{searchText=s.value;render();s2focus();});
   function s2focus(){const el=document.getElementById('search');if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length);}}
-  const bsel=document.getElementById('bsel'); if(bsel){bsel.value=bucketFilter;bsel.addEventListener('change',()=>{bucketFilter=bsel.value;render();});}
   const rb=document.getElementById('refreshBtn'); if(rb) rb.addEventListener('click',refresh);
   const ex=document.getElementById('exportBtn'); if(ex) ex.addEventListener('click',()=>exportCsv(sys));
   document.querySelectorAll('[data-edit]').forEach(b=>b.addEventListener('click',()=>openEdit(sys,b.dataset.edit)));
@@ -429,13 +461,13 @@ function openEdit(sys,clientId){
   let inner='<h2>Update — '+esc(r['Name']||'')+'</h2><p class="msub">'+esc(sys.label)+'</p>';
   if(sys.type==='lead'){
     inner+='<label>Lead Status</label>'+sel('m_status',LEAD_STATUSES,r['Lead Status'])
-      +'<label>Next Planned Date <span class="hintline">(used for "Time Given"; auto for others)</span></label><input type="date" id="m_next" value="'+dmyToIso(r['Next Planned Date'])+'">'
+      +'<label>Next Planned Date <span class="hintline">(used for "Time Given"; auto for others)</span></label><input type="datetime-local" id="m_next" value="'+toDatetimeLocal(r['Next Planned Date'])+'">'
       +'<label>Last Remarks</label><textarea id="m_remarks">'+esc(r['Last Remarks']||'')+'</textarea>'
       +'<label>Assigned To</label><input id="m_assignedTo" value="'+esc(r['Assigned To']||'')+'">'
       +'<label>Scheduled By</label><input id="m_scheduledBy" value="'+esc(r['Scheduled By']||'')+'">';
   } else if(sys.type==='zoom'){
     inner+='<label>Meeting Status</label>'+sel('m_status',ZOOM_STATUSES,r['Meeting Status'])
-      +'<label>Next Planned Date <span class="hintline">(auto for Not Attend/Responding/Follow up; blank for No Meeting/Not Eligible)</span></label><input type="date" id="m_next" value="'+dmyToIso(r['Next Planned Date'])+'">'
+      +'<label>Next Planned Date <span class="hintline">(auto for Not Attend/Responding/Follow up; blank for No Meeting/Not Eligible)</span></label><input type="datetime-local" id="m_next" value="'+toDatetimeLocal(r['Next Planned Date'])+'">'
       +'<label>Onboarding Start</label>'+sel('m_onb',['No','Yes'],r['Onboarding Start']||'No')
       +'<div class="hintline">Onboarding Start = Yes → client moves to Outgoing Onboarding.</div>'
       +'<label>Last Remarks</label><textarea id="m_remarks">'+esc(r['Last Remarks']||'')+'</textarea>'
@@ -443,7 +475,7 @@ function openEdit(sys,clientId){
       +'<label>Scheduled By</label><input id="m_scheduledBy" value="'+esc(r['Scheduled By']||'')+'">';
   } else {
     inner+='<label>Onboarding Status</label>'+sel('m_onbStatus',['In Progress','Completed'],r['Onboarding Status']||'In Progress')
-      +'<label>Next Planned Date</label><input type="date" id="m_next" value="'+dmyToIso(r['Next Planned Date'])+'">'
+      +'<label>Next Planned Date</label><input type="datetime-local" id="m_next" value="'+toDatetimeLocal(r['Next Planned Date'])+'">'
       +'<label>Last Remarks</label><textarea id="m_remarks">'+esc(r['Last Remarks']||'')+'</textarea>'
       +'<label>Assigned To</label><input id="m_assignedTo" value="'+esc(r['Assigned To']||'')+'">';
   }
@@ -452,7 +484,7 @@ function openEdit(sys,clientId){
   document.getElementById('m_cancel').onclick=closeModal;
   document.getElementById('m_save').onclick=async()=>{
     const body={action:'updateRow',stage:sys.type,lane:sys.lane,clientId:clientId,
-      remarks:val('m_remarks'),nextPlanned:isoToDMY(val('m_next')),assignedTo:val('m_assignedTo')};
+      remarks:val('m_remarks'),nextPlanned:dtLocalToDMY(val('m_next')),assignedTo:val('m_assignedTo')};
     if(sys.type==='lead'){ body.status=val('m_status'); body.scheduledBy=val('m_scheduledBy'); }
     if(sys.type==='zoom'){ body.status=val('m_status'); body.scheduledBy=val('m_scheduledBy'); body.onboardingStart=val('m_onb'); }
     if(sys.type==='out'){ body.onboardingStatus=val('m_onbStatus'); }
@@ -463,11 +495,25 @@ function openEdit(sys,clientId){
 }
 
 async function moveClient(sys,clientId){
-  const next=sys.type==='lead'?'Zoom':'Outgoing Onboarding';
-  if(!confirm('Move this client to '+next+' (Lane '+sys.lane+')?'))return;
+  if(sys.type==='lead'){ openMoveToZoom(sys,clientId); return; }
+  if(!confirm('Move this client to Outgoing Onboarding (Lane '+sys.lane+')?'))return;
   toast('Moving…');
-  await writeThenRefresh({action:sys.type==='lead'?'moveToZoom':'moveToOutgoing',lane:sys.lane,clientId:clientId});
+  await writeThenRefresh({action:'moveToOutgoing',lane:sys.lane,clientId:clientId});
   toast('Moved');
+}
+function openMoveToZoom(sys,clientId){
+  const r=rowsFor(sys).find(x=>x['Client ID']===clientId)||{};
+  modal.innerHTML='<h2>Move to Zoom — '+esc(r['Name']||'')+'</h2><p class="msub">Set the first planned date for Zoom FMS '+sys.lane+'. This becomes the client\u2019s first follow-up date there.</p>'
+    +'<label>First Planned Date (Zoom)</label><input type="datetime-local" id="m_next" value="'+toDatetimeLocal(r['Next Planned Date'])+'">'
+    +'<div class="actions"><button class="btn ghost" id="m_cancel">Cancel</button><button class="btn primary" id="m_save">Move to Zoom</button></div>';
+  overlay.classList.add('show');
+  document.getElementById('m_cancel').onclick=closeModal;
+  document.getElementById('m_save').onclick=async()=>{
+    const np=dtLocalToDMY(val('m_next'));
+    closeModal(); toast('Moving…');
+    await writeThenRefresh({action:'moveToZoom',lane:sys.lane,clientId:clientId,nextPlanned:np});
+    toast('Moved to Zoom');
+  };
 }
 async function completeClient(sys,clientId){
   if(!confirm('Mark onboarding as Completed?'))return;
