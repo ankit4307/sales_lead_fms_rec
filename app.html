@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Lead Bridge - FMS</title>
+<title>Lead Bridge — FMS</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
@@ -166,24 +166,19 @@ const ZOOM_STATUSES = [
   'Client Not Responding','Follow up','Not Eligible'
 ];
 
-const SYSTEMS = [
-  {id:'allLeads', label:'All Leads', type:'all'},
-  {id:'tracking', label:'Tracking', type:'tracking'},
-  {id:'lead1', label:'Lead FMS 1', type:'lead', lane:1},
-  {id:'lead2', label:'Lead FMS 2', type:'lead', lane:2},
-  {id:'lead3', label:'Lead FMS 3', type:'lead', lane:3},
-  {id:'zoom1', label:'Zoom FMS 1', type:'zoom', lane:1},
-  {id:'zoom2', label:'Zoom FMS 2', type:'zoom', lane:2},
-  {id:'zoom3', label:'Zoom FMS 3', type:'zoom', lane:3},
-  {id:'out1', label:'Outgoing Onboarding 1', type:'out', lane:1},
-  {id:'out2', label:'Outgoing Onboarding 2', type:'out', lane:2},
-  {id:'out3', label:'Outgoing Onboarding 3', type:'out', lane:3},
-  {id:'nbd', label:'NBD Query FMS', type:'nbd'}
-];
+let SYSTEMS = [];
+function buildSystems(){
+  const lanes=DATA.laneList||[1,2,3];
+  SYSTEMS=[{id:'allLeads',label:'All Leads',type:'all'},{id:'tracking',label:'Tracking',type:'tracking'}];
+  lanes.forEach(n=>SYSTEMS.push({id:'lead'+n,label:'Lead FMS '+n,type:'lead',lane:n}));
+  lanes.forEach(n=>SYSTEMS.push({id:'zoom'+n,label:'Zoom FMS '+n,type:'zoom',lane:n}));
+  lanes.forEach(n=>SYSTEMS.push({id:'out'+n,label:'Outgoing Onboarding '+n,type:'out',lane:n}));
+  SYSTEMS.push({id:'nbd',label:'NBD Query FMS',type:'nbd'});
+}
 
 let KEY = '';
 let ROLE = 'app';
-let DATA = {allLeads:[], lanes:{1:{lead:[],zoom:[],out:[]},2:{lead:[],zoom:[],out:[]},3:{lead:[],zoom:[],out:[]}}, nbd:[], employees:[]};
+let DATA = {allLeads:[], lanes:{1:{lead:[],zoom:[],out:[]},2:{lead:[],zoom:[],out:[]},3:{lead:[],zoom:[],out:[]}}, laneList:[1,2,3], nbd:[], employees:[]};
 let current = 'allLeads';
 let bucketFilter = '';
 let searchText = '';
@@ -211,7 +206,7 @@ async function writeThenRefresh(body){
   await post(body);
   await new Promise(r=>setTimeout(r,900)); // sheet write commit hone do
   const res=await loadAll();
-  if(res&&res.success){ DATA=res.data; render(); }
+  if(res&&res.success){ DATA=res.data; buildSystems(); buildNav(); render(); }
 }
 
 // ---------- Login ----------
@@ -241,20 +236,25 @@ document.getElementById('logoutBtn').addEventListener('click',()=>{sessionStorag
   }
 })();
 
-function enterApp(){ loginWrap.style.display='none'; app.classList.add('show'); buildNav(); render(); }
+function enterApp(){ loginWrap.style.display='none'; app.classList.add('show'); buildSystems(); buildNav(); render(); }
 
 // ---------- Nav ----------
 function buildNav(){
   const nav=document.getElementById('navList');
+  const lanes=DATA.laneList||[1,2,3];
   const master = (ROLE==='admin') ? ['allLeads','tracking'] : ['allLeads'];
-  const groups=[['Master',master],['Lead FMS',['lead1','lead2','lead3']],['Zoom FMS',['zoom1','zoom2','zoom3']],['Outgoing Onboarding',['out1','out2','out3']],['NBD',['nbd']]];
+  const groups=[['Master',master],['Lead FMS',lanes.map(n=>'lead'+n)],['Zoom FMS',lanes.map(n=>'zoom'+n)],['Outgoing Onboarding',lanes.map(n=>'out'+n)],['NBD',['nbd']]];
   let html='';
   groups.forEach(([g,ids])=>{
     html+='<div class="group">'+g+'</div>';
-    ids.forEach(id=>{ const s=SYSTEMS.find(x=>x.id===id); html+='<button class="nav" data-id="'+id+'">'+s.label+'</button>'; });
+    ids.forEach(id=>{ const s=SYSTEMS.find(x=>x.id===id); if(s) html+='<button class="nav" data-id="'+id+'">'+s.label+'</button>'; });
   });
+  if(ROLE==='admin') html+='<div class="group">Settings</div><button class="nav" id="manageLanes">⚙ Manage Lanes</button>';
   nav.innerHTML=html;
-  nav.querySelectorAll('.nav').forEach(b=>b.addEventListener('click',()=>{current=b.dataset.id;bucketFilter='';searchText='';render();}));
+  nav.querySelectorAll('.nav').forEach(b=>{
+    if(b.id==='manageLanes') b.addEventListener('click',openManageLanes);
+    else b.addEventListener('click',()=>{current=b.dataset.id;bucketFilter='';searchText='';render();});
+  });
 }
 
 // ---------- Date helpers ----------
@@ -298,6 +298,7 @@ function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;'
 // ---------- Render ----------
 function render(){
   if(current==='tracking' && ROLE!=='admin') current='allLeads';
+  if(!SYSTEMS.find(s=>s.id===current)) current='allLeads';
   document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('on',b.dataset.id===current));
   const sys=SYSTEMS.find(s=>s.id===current);
   if(sys.type==='all') renderAll(sys);
@@ -413,14 +414,14 @@ function wireStage(sys){
   document.querySelectorAll('[data-complete]').forEach(b=>b.addEventListener('click',()=>completeClient(sys,b.dataset.complete)));
 }
 
-async function refresh(){ const res=await loadAll(); if(res&&res.success){DATA=res.data;render();toast('Refreshed');} }
+async function refresh(){ const res=await loadAll(); if(res&&res.success){DATA=res.data;buildSystems();buildNav();render();toast('Refreshed');} }
 
 // ---------- Tracking (admin) ----------
 function locateClient(id){
-  // furthest stage wins: out > zoom(active) > lead(active) > all leads
-  for(let n=1;n<=3;n++){ const r=DATA.lanes[n].out.find(x=>x['Client ID']===id); if(r) return {stage:'Outgoing Onboarding '+n, status:r['Current Status']||'In Progress', completed:r['Onboarding Status']==='Completed', remarks:r['Last Remarks'], next:r['Next Planned Date'], doc:r['Document']}; }
-  for(let n=1;n<=3;n++){ const r=DATA.lanes[n].zoom.find(x=>x['Client ID']===id&&!isMoved(x)); if(r) return {stage:'Zoom FMS '+n, status:r['Meeting Status']||'—', completed:false, remarks:r['Last Remarks'], next:r['Next Planned Date'], doc:''}; }
-  for(let n=1;n<=3;n++){ const r=DATA.lanes[n].lead.find(x=>x['Client ID']===id&&!isMoved(x)); if(r) return {stage:'Lead FMS '+n, status:r['Lead Status']||'—', completed:false, remarks:r['Last Remarks'], next:r['Next Planned Date'], doc:''}; }
+  const lanes=DATA.laneList||[];
+  for(const n of lanes){ const r=DATA.lanes[n].out.find(x=>x['Client ID']===id); if(r) return {stage:'Outgoing Onboarding '+n, status:r['Current Status']||'In Progress', completed:r['Onboarding Status']==='Completed', remarks:r['Last Remarks'], next:r['Next Planned Date'], doc:r['Document']}; }
+  for(const n of lanes){ const r=DATA.lanes[n].zoom.find(x=>x['Client ID']===id&&!isMoved(x)); if(r) return {stage:'Zoom FMS '+n, status:r['Meeting Status']||'—', completed:false, remarks:r['Last Remarks'], next:r['Next Planned Date'], doc:''}; }
+  for(const n of lanes){ const r=DATA.lanes[n].lead.find(x=>x['Client ID']===id&&!isMoved(x)); if(r) return {stage:'Lead FMS '+n, status:r['Lead Status']||'—', completed:false, remarks:r['Last Remarks'], next:r['Next Planned Date'], doc:''}; }
   return {stage:'All Leads (unassigned)', status:'New', completed:false, remarks:'', next:'', doc:''};
 }
 function renderTracking(){
@@ -613,7 +614,7 @@ function openAdd(){
 function openAssign(clientId){
   const r=DATA.allLeads.find(x=>x['Client ID']===clientId)||{};
   modal.innerHTML='<h2>Send to Lead FMS</h2><p class="msub">'+esc(r['Name']||'')+' — choose which Lead FMS to send to.</p>'
-    +'<label>Send to</label><select id="m_lane"><option value="1">Lead FMS 1</option><option value="2">Lead FMS 2</option><option value="3">Lead FMS 3</option></select>'
+    +'<label>Send to</label>'+laneSelect('m_lane','Lead FMS','')
     +'<label>Assigned To (person)</label><input id="m_assignedTo" placeholder="e.g. Rahul">'
     +'<div class="actions"><button class="btn ghost" id="m_cancel">Cancel</button><button class="btn primary" id="m_save">Send</button></div>';
   overlay.classList.add('show');
@@ -688,11 +689,10 @@ function openMoveModal(sys,clientId,target){
   const destLabel=target==='zoom'?'Zoom FMS':'Outgoing Onboarding';
   const action=target==='zoom'?'moveToZoom':'moveToOutgoing';
   modal.innerHTML='<h2>Send to '+destLabel+' — '+esc(r['Name']||'')+'</h2><p class="msub">Choose destination and set the first planned date there.</p>'
-    +'<label>Send to</label><select id="m_dest"><option value="1">'+destLabel+' 1</option><option value="2">'+destLabel+' 2</option><option value="3">'+destLabel+' 3</option></select>'
+    +'<label>Send to</label>'+laneSelect('m_dest',destLabel,sys.lane)
     +'<label>First Planned Date</label><input type="datetime-local" id="m_next" value="'+toDatetimeLocal(r['Next Planned Date'])+'">'
     +'<div class="actions"><button class="btn ghost" id="m_cancel">Cancel</button><button class="btn primary" id="m_save">Send</button></div>';
   overlay.classList.add('show');
-  document.getElementById('m_dest').value=String(sys.lane);
   document.getElementById('m_cancel').onclick=closeModal;
   document.getElementById('m_save').onclick=async()=>{
     const dest=val('m_dest'); const np=dtLocalToDMY(val('m_next'));
@@ -712,6 +712,26 @@ async function completeClient(sys,clientId){
 // ---------- Helpers ----------
 function val(id){ const el=document.getElementById(id); return el?el.value.trim():''; }
 function sel(id,opts,cur){ return '<select id="'+id+'">'+opts.map(o=>'<option'+(o===cur?' selected':'')+'>'+esc(o)+'</option>').join('')+'</select>'; }
+function laneSelect(id,label,cur){ const lanes=DATA.laneList||[1,2,3]; return '<select id="'+id+'">'+lanes.map(n=>'<option value="'+n+'"'+(String(cur)===String(n)?' selected':'')+'>'+label+' '+n+'</option>').join('')+'</select>'; }
+
+function openManageLanes(){
+  const lanes=DATA.laneList||[];
+  let inner='<h2>Manage Lanes</h2><p class="msub">Each lane = Lead FMS, Zoom FMS &amp; Outgoing Onboarding with that number. Add a lane when a new employee joins.</p>';
+  inner+='<div id="laneList">'+(lanes.length?lanes.map(n=>(
+    '<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--line)">'
+    +'<span><b>Lane '+n+'</b> &nbsp; <span class="hintline">Lead / Zoom / Outgoing '+n+'</span></span>'
+    +'<button class="btn ghost sm" data-laneremove="'+n+'">Remove</button></div>'
+  )).join(''):'<div class="hintline">No lanes yet.</div>')+'</div>';
+  inner+='<div class="actions"><button class="btn ghost" id="m_cancel">Close</button><button class="btn primary" id="m_addLane">+ Add Lane</button></div>';
+  modal.innerHTML=inner; overlay.classList.add('show');
+  document.getElementById('m_cancel').onclick=closeModal;
+  document.getElementById('m_addLane').onclick=async()=>{ toast('Adding lane…'); await writeThenRefresh({action:'laneAdd'}); openManageLanes(); toast('Lane added'); };
+  document.querySelectorAll('[data-laneremove]').forEach(b=>b.addEventListener('click',async()=>{
+    const n=b.dataset.laneremove;
+    if(!confirm('Remove Lane '+n+' from the app?\n(Its sheet tabs stay in your Google Sheet as backup.)'))return;
+    toast('Removing…'); await writeThenRefresh({action:'laneRemove',lane:n}); openManageLanes(); toast('Lane removed');
+  }));
+}
 function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),1800); }
 
 function exportCsv(sys){

@@ -129,7 +129,7 @@
 // ============================================================
 const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyC9pGBgRNUeVt-JQwELpHyq6Mx0WMQW2BsNXyE31HJItjCIbPYbhCfTDYqJ7M3c_eclw/exec';
 // ============================================================
-let KEY='', DATA={allLeads:[],lanes:{1:{lead:[],zoom:[],out:[]},2:{lead:[],zoom:[],out:[]},3:{lead:[],zoom:[],out:[]}}};
+let KEY='', DATA={allLeads:[],lanes:{1:{lead:[],zoom:[],out:[]},2:{lead:[],zoom:[],out:[]},3:{lead:[],zoom:[],out:[]}},laneList:[1,2,3],nbd:[],employees:[]};
 
 function jsonp(params){return new Promise((res,rej)=>{const cb='cb_'+Date.now()+'_'+Math.floor(Math.random()*1e4);const s=document.createElement('script');const t=setTimeout(()=>{cleanup();rej(new Error('timeout'));},15000);function cleanup(){clearTimeout(t);delete window[cb];if(s.parentNode)s.parentNode.removeChild(s);}window[cb]=d=>{cleanup();res(d);};s.onerror=()=>{cleanup();rej(new Error('network'));};s.src=SCRIPT_URL+'?'+params+'&callback='+cb;document.body.appendChild(s);});}
 function loadAll(){return jsonp('action=getAll&key='+encodeURIComponent(KEY));}
@@ -165,19 +165,20 @@ document.getElementById('logoutBtn').addEventListener('click',()=>{sessionStorag
 (async function(){const s=sessionStorage.getItem('lb_admin_key');if(s&&SCRIPT_URL.indexOf('PASTE_YOUR')!==0){try{KEY=s;const res=await loadAll();if(res&&res.success&&res.role==='admin'){DATA=res.data;enter();}else KEY='';}catch(e){KEY='';}}})();
 
 function enter(){ loginWrap.style.display='none'; app.classList.add('show'); buildSysSelect(); renderAll(); }
-async function refresh(){const res=await loadAll();if(res&&res.success){DATA=res.data;renderAll();toast('Refreshed');}}
+async function refresh(){const res=await loadAll();if(res&&res.success){DATA=res.data;buildSysSelect();renderAll();toast('Refreshed');}}
 
 function allClients(){return DATA.allLeads;}
 function locate(id){
-  for(let n=1;n<=3;n++){const r=DATA.lanes[n].out.find(x=>x['Client ID']===id);if(r)return{stage:'Outgoing Onboarding '+n,status:r['Current Status']||'In Progress',completed:r['Onboarding Status']==='Completed',remarks:r['Last Remarks'],next:r['Next Planned Date'],doc:r['Document']};}
-  for(let n=1;n<=3;n++){const r=DATA.lanes[n].zoom.find(x=>x['Client ID']===id&&!isMoved(x));if(r)return{stage:'Zoom FMS '+n,status:r['Meeting Status']||'—',completed:false,remarks:r['Last Remarks'],next:r['Next Planned Date'],doc:''};}
-  for(let n=1;n<=3;n++){const r=DATA.lanes[n].lead.find(x=>x['Client ID']===id&&!isMoved(x));if(r)return{stage:'Lead FMS '+n,status:r['Lead Status']||'—',completed:false,remarks:r['Last Remarks'],next:r['Next Planned Date'],doc:''};}
+  const lanes=DATA.laneList||[];
+  for(const n of lanes){const r=DATA.lanes[n].out.find(x=>x['Client ID']===id);if(r)return{stage:'Outgoing Onboarding '+n,status:r['Current Status']||'In Progress',completed:r['Onboarding Status']==='Completed',remarks:r['Last Remarks'],next:r['Next Planned Date'],doc:r['Document']};}
+  for(const n of lanes){const r=DATA.lanes[n].zoom.find(x=>x['Client ID']===id&&!isMoved(x));if(r)return{stage:'Zoom FMS '+n,status:r['Meeting Status']||'—',completed:false,remarks:r['Last Remarks'],next:r['Next Planned Date'],doc:''};}
+  for(const n of lanes){const r=DATA.lanes[n].lead.find(x=>x['Client ID']===id&&!isMoved(x));if(r)return{stage:'Lead FMS '+n,status:r['Lead Status']||'—',completed:false,remarks:r['Last Remarks'],next:r['Next Planned Date'],doc:''};}
   return{stage:'All Leads (unassigned)',status:'New',completed:false,remarks:'',next:'',doc:''};
 }
 
 function renderAll(){ renderStats(); renderTracking(); renderSystem(); }
 
-function countIn(type){let c=0;for(let n=1;n<=3;n++){DATA.lanes[n][type].forEach(r=>{if(type==='out'||!isMoved(r))c++;});}return c;}
+function countIn(type){let c=0;(DATA.laneList||[]).forEach(n=>{DATA.lanes[n][type].forEach(r=>{if(type==='out'||!isMoved(r))c++;});});return c;}
 function renderStats(){
   const all=DATA.allLeads.length;
   const done=DATA.allLeads.filter(r=>locate(r['Client ID']).completed).length;
@@ -231,8 +232,24 @@ const COLS={
   nbd:['Query ID','Client Name','Phone Number','Remarks','Status','Final Status','Query Status','Next Planned Date','Employee','Created On','Updated On']
 };
 let sysSearch='';
-function buildSysSelect(){ document.getElementById('sysSel').innerHTML=SYS.map(s=>'<option value="'+s.id+'">'+s.label+'</option>').join(''); }
-function sysParts(id){ if(id==='allLeads')return{rows:DATA.allLeads,type:'all'}; if(id==='nbd')return{rows:DATA.nbd||[],type:'nbd'}; const n=id.slice(-1); const t=id.slice(0,-1); return {rows:DATA.lanes[n][t],type:t}; }
+function buildSysSelect(){
+  const lanes=DATA.laneList||[1,2,3];
+  let opts=[{id:'allLeads',label:'All Leads'}];
+  lanes.forEach(n=>opts.push({id:'lead'+n,label:'Lead FMS '+n}));
+  lanes.forEach(n=>opts.push({id:'zoom'+n,label:'Zoom FMS '+n}));
+  lanes.forEach(n=>opts.push({id:'out'+n,label:'Outgoing Onboarding '+n}));
+  opts.push({id:'nbd',label:'NBD Query FMS'});
+  const cur=document.getElementById('sysSel').value;
+  document.getElementById('sysSel').innerHTML=opts.map(s=>'<option value="'+s.id+'">'+s.label+'</option>').join('');
+  if(cur&&opts.find(o=>o.id===cur)) document.getElementById('sysSel').value=cur;
+}
+function sysParts(id){
+  if(id==='allLeads')return{rows:DATA.allLeads,type:'all'};
+  if(id==='nbd')return{rows:DATA.nbd||[],type:'nbd'};
+  const m=id.match(/^(lead|zoom|out)(\d+)$/);
+  if(m){ const t=m[1],n=m[2]; return {rows:(DATA.lanes[n]&&DATA.lanes[n][t])||[],type:t}; }
+  return {rows:[],type:'all'};
+}
 function dateField(c){return c==='Next Planned Date'||c==='Created On'||c==='Updated On';}
 function renderSystem(){
   const id=document.getElementById('sysSel').value||'allLeads';
