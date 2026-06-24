@@ -154,6 +154,9 @@ const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyC9pGBgRNUeVt-JQwEL
 
 const LEAD_STATUSES = ['Time Given for Zoom','Client Not Coming','No Response','Follow up','Not Interested'];
 const ONBOARDING_STAGES = ['Documentation','KYC Done','KYC Not Done','UCC','Mandate','AOF/FATCA','File Upload (Only for Non Individual)','Ready to Invest','SIP','Lumpsum','SWP'];
+const NBD_STATUS = ['HIGH PRIORITY','DONE','NORMAL'];
+const NBD_FINAL  = ['UNDER PROCESS','COMPLETE'];
+const NBD_QUERY  = ['Not Done','Done'];
 const ZOOM_STATUSES = [
   'Zoom 1 Done','Zoom 2 Done','Zoom 3 Done','Zoom 4 Done','Zoom 5 Done',
   'Zoom 2 Scheduled','Zoom 3 Scheduled','Zoom 4 Scheduled','Zoom 5 Scheduled',
@@ -174,12 +177,13 @@ const SYSTEMS = [
   {id:'zoom3', label:'Zoom FMS 3', type:'zoom', lane:3},
   {id:'out1', label:'Outgoing Onboarding 1', type:'out', lane:1},
   {id:'out2', label:'Outgoing Onboarding 2', type:'out', lane:2},
-  {id:'out3', label:'Outgoing Onboarding 3', type:'out', lane:3}
+  {id:'out3', label:'Outgoing Onboarding 3', type:'out', lane:3},
+  {id:'nbd', label:'NBD Query FMS', type:'nbd'}
 ];
 
 let KEY = '';
 let ROLE = 'app';
-let DATA = {allLeads:[], lanes:{1:{lead:[],zoom:[],out:[]},2:{lead:[],zoom:[],out:[]},3:{lead:[],zoom:[],out:[]}}};
+let DATA = {allLeads:[], lanes:{1:{lead:[],zoom:[],out:[]},2:{lead:[],zoom:[],out:[]},3:{lead:[],zoom:[],out:[]}}, nbd:[], employees:[]};
 let current = 'allLeads';
 let bucketFilter = '';
 let searchText = '';
@@ -243,7 +247,7 @@ function enterApp(){ loginWrap.style.display='none'; app.classList.add('show'); 
 function buildNav(){
   const nav=document.getElementById('navList');
   const master = (ROLE==='admin') ? ['allLeads','tracking'] : ['allLeads'];
-  const groups=[['Master',master],['Lead FMS',['lead1','lead2','lead3']],['Zoom FMS',['zoom1','zoom2','zoom3']],['Outgoing Onboarding',['out1','out2','out3']]];
+  const groups=[['Master',master],['Lead FMS',['lead1','lead2','lead3']],['Zoom FMS',['zoom1','zoom2','zoom3']],['Outgoing Onboarding',['out1','out2','out3']],['NBD',['nbd']]];
   let html='';
   groups.forEach(([g,ids])=>{
     html+='<div class="group">'+g+'</div>';
@@ -298,6 +302,7 @@ function render(){
   const sys=SYSTEMS.find(s=>s.id===current);
   if(sys.type==='all') renderAll(sys);
   else if(sys.type==='tracking') renderTracking();
+  else if(sys.type==='nbd') renderNbd(sys);
   else renderStage(sys);
 }
 
@@ -320,7 +325,9 @@ function renderStage(sys){
   const c=bucketCounts(rows);
   const stageLabel={lead:'Lead',zoom:'Zoom',out:'Onboarding'}[sys.type];
   let html='';
-  html+='<div class="head"><h1>'+esc(sys.label)+'</h1><span class="sub">'+rows.length+' clients in this system</span><span class="spacer"></span></div>';
+  let sub = rows.length+' clients in this system';
+  if(sys.type==='out'){ const comp=rows.filter(r=>r['Onboarding Status']==='Completed').length; sub=rows.length+' clients &nbsp; <span class="pill orange">'+(rows.length-comp)+' Under Process</span> &nbsp; <span class="pill green">'+comp+' Completed</span>'; }
+  html+='<div class="head"><h1>'+esc(sys.label)+'</h1><span class="sub">'+sub+'</span><span class="spacer"></span></div>';
   html+='<div class="tabs">'
     +stageTab('','Home',rows.length)
     +stageTab('overdue','Overdue',c.overdue)
@@ -449,12 +456,116 @@ function exportTracking(){
   downloadCsv(cols,rows,'tracking');
 }
 
+// ---------- NBD Query FMS ----------
+function nbdStatusPill(v){ v=(v||'').trim(); if(!v)return'—'; const m={'HIGH PRIORITY':'red','DONE':'green','NORMAL':'grey'}; return '<span class="pill '+(m[v]||'grey')+'">'+esc(v)+'</span>'; }
+function nbdFinalPill(v){ v=(v||'').trim(); return v==='COMPLETE'?'<span class="pill green">COMPLETE</span>':'<span class="pill orange">UNDER PROCESS</span>'; }
+function nbdQueryPill(v){ v=(v||'').trim(); return v==='Done'?'<span class="pill green">Done</span>':'<span class="pill grey">Not Done</span>'; }
+
+function renderNbd(sys){
+  const rows=DATA.nbd||[];
+  const q=searchText.trim().toLowerCase();
+  const list=rows.filter(r=>!q||[r['Client Name'],r['Phone Number'],r['Employee'],r['Remarks']].join(' ').toLowerCase().includes(q));
+  const comp=rows.filter(r=>r['Final Status']==='COMPLETE').length;
+  let html='';
+  html+='<div class="head"><h1>NBD Query FMS</h1><span class="sub">'+rows.length+' queries &nbsp; <span class="pill orange">'+(rows.length-comp)+' Under Process</span> &nbsp; <span class="pill green">'+comp+' Complete</span></span><span class="spacer"></span><button class="btn ghost" id="empBtn">Manage Employees</button><button class="btn primary" id="addQBtn">+ Add Query</button></div>';
+  html+='<div class="toolbar"><input type="text" id="search" placeholder="Search client, phone, employee…" value="'+esc(searchText)+'"><button class="btn ghost sm" id="refreshBtn">↻ Refresh</button><button class="btn dark sm" id="exportBtn">Export CSV</button></div>';
+  const cols=['Client Name','Phone','Remarks','Status','Final Status','Query Status','Next Planned','Employee','Actions'];
+  html+='<div class="tablecard"><div class="scroll"><table><thead><tr>'+cols.map(c=>'<th>'+c+'</th>').join('')+'</tr></thead><tbody>';
+  if(!list.length) html+='<tr><td colspan="'+cols.length+'" class="empty">No queries yet.</td></tr>';
+  else list.forEach(r=>{
+    html+='<tr><td>'+esc(r['Client Name'])+'</td><td style="white-space:nowrap">'+esc(r['Phone Number'])+'</td>'
+      +'<td class="wrap">'+esc(r['Remarks']||'—')+'</td>'
+      +'<td>'+nbdStatusPill(r['Status'])+'</td>'
+      +'<td>'+nbdFinalPill(r['Final Status'])+'</td>'
+      +'<td>'+nbdQueryPill(r['Query Status'])+'</td>'
+      +'<td>'+dateCell(r['Next Planned Date'])+'</td>'
+      +'<td>'+esc(r['Employee']||'—')+'</td>'
+      +'<td><button class="btn ghost sm" data-qedit="'+esc(r['Query ID'])+'">Edit</button></td></tr>';
+  });
+  html+='</tbody></table></div></div><div class="count">'+list.length+' of '+rows.length+' shown</div>';
+  document.getElementById('view').innerHTML=html;
+
+  document.getElementById('addQBtn').addEventListener('click',openNbdAdd);
+  document.getElementById('empBtn').addEventListener('click',openManageEmployees);
+  document.getElementById('refreshBtn').addEventListener('click',refresh);
+  document.getElementById('exportBtn').addEventListener('click',()=>downloadCsv(['Query ID','Client Name','Phone Number','Remarks','Status','Final Status','Query Status','Next Planned Date','Employee','Created On','Updated On'],rows,'nbd_query_fms'));
+  const s=document.getElementById('search'); s.addEventListener('input',()=>{searchText=s.value;renderNbd(sys);const el=document.getElementById('search');el.focus();el.setSelectionRange(el.value.length,el.value.length);});
+  document.querySelectorAll('[data-qedit]').forEach(b=>b.addEventListener('click',()=>openNbdEdit(b.dataset.qedit)));
+}
+
+function empOptions(cur){ const list=DATA.employees||[]; return '<select id="m_employee"><option value="">— Select —</option>'+list.map(e=>'<option'+(e===cur?' selected':'')+'>'+esc(e)+'</option>').join('')+'</select>'; }
+
+function openNbdAdd(){
+  modal.innerHTML='<h2>Add Query</h2><p class="msub">New NBD client query.</p>'
+    +'<label>Client Name</label><input id="m_clientName">'
+    +'<label>Phone Number</label><input id="m_phone" inputmode="tel">'
+    +'<label>Remarks</label><textarea id="m_remarks"></textarea>'
+    +'<label>Status</label>'+sel('m_status',NBD_STATUS,'NORMAL')
+    +'<label>Handled by (Employee)</label>'+empOptions('')
+    +'<div class="actions"><button class="btn ghost" id="m_cancel">Cancel</button><button class="btn primary" id="m_save">Add Query</button></div>';
+  overlay.classList.add('show');
+  document.getElementById('m_cancel').onclick=closeModal;
+  document.getElementById('m_save').onclick=async()=>{
+    const d={action:'nbdAdd',clientName:val('m_clientName'),phone:val('m_phone'),remarks:val('m_remarks'),status:val('m_status'),employee:val('m_employee')};
+    if(!d.clientName){toast('Client name required');return;}
+    closeModal(); toast('Adding…');
+    await writeThenRefresh(d);
+    toast('Query added');
+  };
+}
+
+function openNbdEdit(qid){
+  const r=(DATA.nbd||[]).find(x=>x['Query ID']===qid)||{};
+  modal.innerHTML='<h2>Edit Query — '+esc(r['Client Name']||'')+'</h2>'
+    +'<label>Client Name</label><input id="m_clientName" value="'+esc(r['Client Name']||'')+'">'
+    +'<label>Phone Number</label><input id="m_phone" value="'+esc(r['Phone Number']||'')+'">'
+    +'<label>Remarks</label><textarea id="m_remarks">'+esc(r['Remarks']||'')+'</textarea>'
+    +'<label>Status</label>'+sel('m_status',NBD_STATUS,r['Status']||'NORMAL')
+    +'<label>Query Status <span class="hintline">(Done → Final Status becomes COMPLETE)</span></label>'+sel('m_queryStatus',NBD_QUERY,r['Query Status']||'Not Done')
+    +'<label>Final Status</label>'+sel('m_finalStatus',NBD_FINAL,r['Final Status']||'UNDER PROCESS')
+    +'<label>Handled by (Employee)</label>'+empOptions(r['Employee']||'')
+    +'<div class="actions"><button class="btn ghost" id="m_cancel">Cancel</button><button class="btn primary" id="m_save">Save</button></div>';
+  overlay.classList.add('show');
+  const qsel=document.getElementById('m_queryStatus'), fsel=document.getElementById('m_finalStatus');
+  qsel.addEventListener('change',()=>{ if(qsel.value==='Done') fsel.value='COMPLETE'; });
+  document.getElementById('m_cancel').onclick=closeModal;
+  document.getElementById('m_save').onclick=async()=>{
+    const d={action:'nbdUpdate',queryId:qid,clientName:val('m_clientName'),phone:val('m_phone'),remarks:val('m_remarks'),status:val('m_status'),queryStatus:val('m_queryStatus'),finalStatus:val('m_finalStatus'),employee:val('m_employee')};
+    closeModal(); toast('Saving…');
+    await writeThenRefresh(d);
+    toast('Saved');
+  };
+}
+
+function openManageEmployees(){
+  const list=DATA.employees||[];
+  let inner='<h2>Manage Employees</h2><p class="msub">These names appear in the query "Handled by" dropdown.</p>';
+  inner+='<div id="empList">'+list.map(e=>(
+    '<div style="display:flex;gap:8px;margin-bottom:8px;align-items:center">'
+    +'<input class="empName" data-old="'+esc(e)+'" value="'+esc(e)+'" style="flex:1">'
+    +'<button class="btn ghost sm" data-emprename="'+esc(e)+'">Save</button>'
+    +'<button class="btn ghost sm" data-empremove="'+esc(e)+'">Remove</button></div>'
+  )).join('')+'</div>';
+  inner+='<label>Add new employee</label><div style="display:flex;gap:8px"><input id="m_newEmp" style="flex:1" placeholder="Name"><button class="btn primary" id="m_addEmp">Add</button></div>';
+  inner+='<div class="actions"><button class="btn ghost" id="m_cancel">Close</button></div>';
+  modal.innerHTML=inner; overlay.classList.add('show');
+  document.getElementById('m_cancel').onclick=closeModal;
+  document.getElementById('m_addEmp').onclick=async()=>{ const n=val('m_newEmp'); if(!n){toast('Enter a name');return;} toast('Adding…'); await writeThenRefresh({action:'empAdd',name:n}); openManageEmployees(); toast('Added'); };
+  document.querySelectorAll('[data-emprename]').forEach(b=>b.addEventListener('click',async()=>{
+    const old=b.dataset.emprename; const inp=document.querySelector('.empName[data-old="'+CSS.escape(old)+'"]'); const nn=inp?inp.value.trim():'';
+    if(!nn||nn===old){closeModal();return;} toast('Renaming…'); await writeThenRefresh({action:'empRename',oldName:old,newName:nn}); openManageEmployees(); toast('Renamed');
+  }));
+  document.querySelectorAll('[data-empremove]').forEach(b=>b.addEventListener('click',async()=>{
+    if(!confirm('Remove '+b.dataset.empremove+'?'))return; toast('Removing…'); await writeThenRefresh({action:'empRemove',name:b.dataset.empremove}); openManageEmployees(); toast('Removed');
+  }));
+}
+
 // ---------- All Leads view ----------
 function renderAll(sys){
   const rows=DATA.allLeads;
   let html='';
   html+='<div class="head"><h1>All Leads</h1><span class="sub">'+rows.length+' total</span><span class="spacer"></span><button class="btn primary" id="addBtn">+ Add Lead</button></div>';
-  html+='<div class="toolbar"><input type="text" id="search" placeholder="Search name, email, phone, city…" value="'+esc(searchText)+'"><button class="btn dark sm" id="exportBtn">Export CSV</button></div>';
+  html+='<div class="toolbar"><input type="text" id="search" placeholder="Search name, email, phone, city…" value="'+esc(searchText)+'"><button class="btn ghost sm" id="refreshBtn">↻ Refresh</button><button class="btn dark sm" id="exportBtn">Export CSV</button></div>';
   const q=searchText.trim().toLowerCase();
   const list=rows.filter(r=>!q||[r['Name'],r['Email'],r['Contact No.'],r['City']].join(' ').toLowerCase().includes(q));
   const cols=['Created On','Source','Name','Contact','Email','City','Lane','Assigned To','Status','Actions'];
@@ -469,6 +580,7 @@ function renderAll(sys){
   document.getElementById('view').innerHTML=html;
 
   document.getElementById('addBtn').addEventListener('click',openAdd);
+  const rfb=document.getElementById('refreshBtn'); if(rfb) rfb.addEventListener('click',refresh);
   const s=document.getElementById('search'); s.addEventListener('input',()=>{searchText=s.value;renderAll(sys);const el=document.getElementById('search');el.focus();el.setSelectionRange(el.value.length,el.value.length);});
   document.getElementById('exportBtn').addEventListener('click',()=>exportAll());
   document.querySelectorAll('[data-assign]').forEach(b=>b.addEventListener('click',()=>openAssign(b.dataset.assign)));
