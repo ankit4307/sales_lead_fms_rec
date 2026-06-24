@@ -153,6 +153,7 @@
 const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyC9pGBgRNUeVt-JQwELpHyq6Mx0WMQW2BsNXyE31HJItjCIbPYbhCfTDYqJ7M3c_eclw/exec';
 
 const LEAD_STATUSES = ['Time Given for Zoom','Client Not Coming','No Response','Follow up','Not Interested'];
+const ONBOARDING_STAGES = ['Documentation','KYC Done','KYC Not Done','UCC','Mandate','AOF/FATCA','File Upload (Only for Non Individual)','Ready to Invest','SIP','Lumpsum','SWP'];
 const ZOOM_STATUSES = [
   'Zoom 1 Done','Zoom 2 Done','Zoom 3 Done','Zoom 4 Done','Zoom 5 Done',
   'Zoom 2 Scheduled','Zoom 3 Scheduled','Zoom 4 Scheduled','Zoom 5 Scheduled',
@@ -164,6 +165,7 @@ const ZOOM_STATUSES = [
 
 const SYSTEMS = [
   {id:'allLeads', label:'All Leads', type:'all'},
+  {id:'tracking', label:'Tracking', type:'tracking'},
   {id:'lead1', label:'Lead FMS 1', type:'lead', lane:1},
   {id:'lead2', label:'Lead FMS 2', type:'lead', lane:2},
   {id:'lead3', label:'Lead FMS 3', type:'lead', lane:3},
@@ -176,6 +178,7 @@ const SYSTEMS = [
 ];
 
 let KEY = '';
+let ROLE = 'app';
 let DATA = {allLeads:[], lanes:{1:{lead:[],zoom:[],out:[]},2:{lead:[],zoom:[],out:[]},3:{lead:[],zoom:[],out:[]}}};
 let current = 'allLeads';
 let bucketFilter = '';
@@ -218,7 +221,7 @@ async function doLogin(){
   try{
     KEY=k;
     const res=await loadAll();
-    if(res&&res.success){ DATA=res.data; sessionStorage.setItem('lb_key',k); enterApp(); }
+    if(res&&res.success){ ROLE=res.role||'app'; DATA=res.data; sessionStorage.setItem('lb_key',k); enterApp(); }
     else{ loginErr.textContent=(res&&res.error)||'Wrong password.'; loginErr.classList.add('show'); KEY=''; }
   }catch(e){ loginErr.textContent='Could not connect. Check URL/connection.'; loginErr.classList.add('show'); KEY=''; }
   loginBtn.disabled=false; loginBtn.textContent='Log in';
@@ -230,7 +233,7 @@ document.getElementById('logoutBtn').addEventListener('click',()=>{sessionStorag
 (async function(){
   const saved=sessionStorage.getItem('lb_key');
   if(saved&&SCRIPT_URL.indexOf('PASTE_YOUR')!==0){
-    try{ KEY=saved; const res=await loadAll(); if(res&&res.success){DATA=res.data;enterApp();} else {KEY='';} }catch(e){KEY='';}
+    try{ KEY=saved; const res=await loadAll(); if(res&&res.success){ROLE=res.role||'app';DATA=res.data;enterApp();} else {KEY='';} }catch(e){KEY='';}
   }
 })();
 
@@ -239,7 +242,8 @@ function enterApp(){ loginWrap.style.display='none'; app.classList.add('show'); 
 // ---------- Nav ----------
 function buildNav(){
   const nav=document.getElementById('navList');
-  const groups=[['Master',['allLeads']],['Lead FMS',['lead1','lead2','lead3']],['Zoom FMS',['zoom1','zoom2','zoom3']],['Outgoing Onboarding',['out1','out2','out3']]];
+  const master = (ROLE==='admin') ? ['allLeads','tracking'] : ['allLeads'];
+  const groups=[['Master',master],['Lead FMS',['lead1','lead2','lead3']],['Zoom FMS',['zoom1','zoom2','zoom3']],['Outgoing Onboarding',['out1','out2','out3']]];
   let html='';
   groups.forEach(([g,ids])=>{
     html+='<div class="group">'+g+'</div>';
@@ -289,9 +293,20 @@ function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;'
 
 // ---------- Render ----------
 function render(){
+  if(current==='tracking' && ROLE!=='admin') current='allLeads';
   document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('on',b.dataset.id===current));
   const sys=SYSTEMS.find(s=>s.id===current);
-  if(sys.type==='all') renderAll(sys); else renderStage(sys);
+  if(sys.type==='all') renderAll(sys);
+  else if(sys.type==='tracking') renderTracking();
+  else renderStage(sys);
+}
+
+// active rows: lead/zoom me jo "Moved" ho gaye unhe active list me mat dikhao
+function isMoved(r){ return /^Moved/.test(String(r['Record Status']||'')); }
+function activeRows(sys){
+  const rows=rowsFor(sys);
+  if(sys.type==='lead'||sys.type==='zoom') return rows.filter(r=>!isMoved(r));
+  return rows;
 }
 
 function bucketCounts(rows){
@@ -301,7 +316,7 @@ function bucketCounts(rows){
 }
 
 function renderStage(sys){
-  const rows=rowsFor(sys);
+  const rows=activeRows(sys);
   const c=bucketCounts(rows);
   const stageLabel={lead:'Lead',zoom:'Zoom',out:'Onboarding'}[sys.type];
   let html='';
@@ -322,7 +337,7 @@ function renderStage(sys){
   let cols;
   if(sys.type==='lead') cols=['Name','Contact','City','Status','Next Planned','Last Remarks','Assigned To','Scheduled By','Actions'];
   else if(sys.type==='zoom') cols=['Name','Contact','City','Meeting Status','Next Planned','Onboarding','Last Remarks','Assigned To','Actions'];
-  else cols=['Name','Contact','City','Onboarding Status','Next Planned','Last Remarks','Assigned To','Actions'];
+  else cols=['Name','Contact','City','Current Status','Onboarding','Next Planned','Doc','Last Remarks','Assigned To','Actions'];
 
   html+='<div class="tablecard"><div class="scroll"><table><thead><tr>'+cols.map(c=>'<th>'+c+'</th>').join('')+'</tr></thead><tbody>';
   if(!list.length){ html+='<tr><td colspan="'+cols.length+'" class="empty">No clients here.</td></tr>'; }
@@ -359,11 +374,13 @@ function rowHtml(sys,r){
       +'<td>'+meetPill(r['Onboarding Start'])+'</td>'
       +'<td class="wrap">'+esc(r['Last Remarks']||'—')+'</td>'
       +'<td>'+esc(r['Assigned To']||'—')+'</td>'
-      +'<td><div class="rowbtns"><button class="btn ghost sm" data-edit="'+esc(id)+'">Edit</button><button class="btn primary sm" data-move="'+esc(id)+'">→ Onboarding</button></div></td></tr>';
+      +'<td><div class="rowbtns"><button class="btn ghost sm" data-edit="'+esc(id)+'">Edit</button><button class="btn primary sm" data-move="'+esc(id)+'">&rarr; Onboarding</button></div></td></tr>';
   }
   return '<tr>'+base
+    +'<td>'+(r['Current Status']?'<span class="pill blue">'+esc(r['Current Status'])+'</span>':'—')+'</td>'
     +'<td>'+(r['Onboarding Status']==='Completed'?'<span class="pill green">Completed</span>':'<span class="pill orange">In Progress</span>')+'</td>'
     +'<td>'+dateCell(r['Next Planned Date'])+'</td>'
+    +'<td>'+(r['Document']?'<a href="'+esc(r['Document'])+'" target="_blank" rel="noopener">View</a>':'—')+'</td>'
     +'<td class="wrap">'+esc(r['Last Remarks']||'—')+'</td>'
     +'<td>'+esc(r['Assigned To']||'—')+'</td>'
     +'<td><div class="rowbtns"><button class="btn ghost sm" data-edit="'+esc(id)+'">Edit</button><button class="btn dark sm" data-complete="'+esc(id)+'">Complete</button></div></td></tr>';
@@ -391,6 +408,47 @@ function wireStage(sys){
 
 async function refresh(){ const res=await loadAll(); if(res&&res.success){DATA=res.data;render();toast('Refreshed');} }
 
+// ---------- Tracking (admin) ----------
+function locateClient(id){
+  // furthest stage wins: out > zoom(active) > lead(active) > all leads
+  for(let n=1;n<=3;n++){ const r=DATA.lanes[n].out.find(x=>x['Client ID']===id); if(r) return {stage:'Outgoing Onboarding '+n, status:r['Current Status']||'In Progress', completed:r['Onboarding Status']==='Completed', remarks:r['Last Remarks'], next:r['Next Planned Date'], doc:r['Document']}; }
+  for(let n=1;n<=3;n++){ const r=DATA.lanes[n].zoom.find(x=>x['Client ID']===id&&!isMoved(x)); if(r) return {stage:'Zoom FMS '+n, status:r['Meeting Status']||'—', completed:false, remarks:r['Last Remarks'], next:r['Next Planned Date'], doc:''}; }
+  for(let n=1;n<=3;n++){ const r=DATA.lanes[n].lead.find(x=>x['Client ID']===id&&!isMoved(x)); if(r) return {stage:'Lead FMS '+n, status:r['Lead Status']||'—', completed:false, remarks:r['Last Remarks'], next:r['Next Planned Date'], doc:''}; }
+  return {stage:'All Leads (unassigned)', status:'New', completed:false, remarks:'', next:'', doc:''};
+}
+function renderTracking(){
+  const all=DATA.allLeads;
+  const q=searchText.trim().toLowerCase();
+  const rows=all.filter(r=>!q||[r['Name'],r['Email'],r['Contact No.'],r['City']].join(' ').toLowerCase().includes(q));
+  const done=all.filter(r=>locateClient(r['Client ID']).completed).length;
+  let html='';
+  html+='<div class="head"><h1>Tracking</h1><span class="sub">'+all.length+' clients · '+done+' onboarding completed</span><span class="spacer"></span><button class="btn ghost sm" id="refreshBtn">↻ Refresh</button><button class="btn dark sm" id="exportBtn">Export CSV</button></div>';
+  html+='<div class="toolbar"><input type="text" id="search" placeholder="Search name, email, phone, city…" value="'+esc(searchText)+'"></div>';
+  const cols=['Name','Contact','City','Current Stage','Current Status','Onboarding Complete','Next Planned','Last Remarks','Document'];
+  html+='<div class="tablecard"><div class="scroll"><table><thead><tr>'+cols.map(c=>'<th>'+c+'</th>').join('')+'</tr></thead><tbody>';
+  if(!rows.length) html+='<tr><td colspan="'+cols.length+'" class="empty">No clients.</td></tr>';
+  else rows.forEach(r=>{
+    const loc=locateClient(r['Client ID']);
+    html+='<tr><td>'+esc(r['Name'])+'</td><td style="white-space:nowrap">'+esc(r['Contact No.'])+'</td><td>'+esc(r['City'])+'</td>'
+      +'<td><span class="pill blue">'+esc(loc.stage)+'</span></td>'
+      +'<td>'+esc(loc.status||'—')+'</td>'
+      +'<td>'+(loc.completed?'<span class="pill green">Completed</span>':'<span class="pill grey">No</span>')+'</td>'
+      +'<td>'+dateCell(loc.next)+'</td>'
+      +'<td class="wrap">'+esc(loc.remarks||'—')+'</td>'
+      +'<td>'+(loc.doc?'<a href="'+esc(loc.doc)+'" target="_blank" rel="noopener">View</a>':'—')+'</td></tr>';
+  });
+  html+='</tbody></table></div></div><div class="count">'+rows.length+' of '+all.length+' shown</div>';
+  document.getElementById('view').innerHTML=html;
+  const s=document.getElementById('search'); s.addEventListener('input',()=>{searchText=s.value;renderTracking();const el=document.getElementById('search');el.focus();el.setSelectionRange(el.value.length,el.value.length);});
+  document.getElementById('refreshBtn').addEventListener('click',refresh);
+  document.getElementById('exportBtn').addEventListener('click',exportTracking);
+}
+function exportTracking(){
+  const cols=['Client ID','Name','Contact No.','Email','City','Current Stage','Current Status','Onboarding Complete','Next Planned Date','Last Remarks','Document'];
+  const rows=DATA.allLeads.map(r=>{ const l=locateClient(r['Client ID']); return {'Client ID':r['Client ID'],'Name':r['Name'],'Contact No.':r['Contact No.'],'Email':r['Email'],'City':r['City'],'Current Stage':l.stage,'Current Status':l.status,'Onboarding Complete':l.completed?'Yes':'No','Next Planned Date':l.next,'Last Remarks':l.remarks,'Document':l.doc}; });
+  downloadCsv(cols,rows,'tracking');
+}
+
 // ---------- All Leads view ----------
 function renderAll(sys){
   const rows=DATA.allLeads;
@@ -404,7 +462,7 @@ function renderAll(sys){
   if(!list.length) html+='<tr><td colspan="'+cols.length+'" class="empty">No leads yet.</td></tr>';
   else list.forEach(r=>{
     const dist=r['Status']==='Distributed';
-    html+='<tr><td style="white-space:nowrap">'+esc(r['Created On'])+'</td><td><span class="pill '+(r['Source']==='Self'?'blue':'grey')+'">'+esc(r['Source']||'—')+'</span></td><td>'+esc(r['Name'])+'</td><td style="white-space:nowrap">'+esc(r['Contact No.'])+'</td><td>'+esc(r['Email'])+'</td><td>'+esc(r['City'])+'</td><td>'+esc(r['Assigned Lane']||'—')+'</td><td>'+esc(r['Assigned To']||'—')+'</td><td>'+(dist?'<span class="pill green">Distributed</span>':'<span class="pill orange">New</span>')+'</td>'
+    html+='<tr><td style="white-space:nowrap">'+esc(fmtDT(r['Created On']))+'</td><td><span class="pill '+(r['Source']==='Self'?'blue':'grey')+'">'+esc(r['Source']||'—')+'</span></td><td>'+esc(r['Name'])+'</td><td style="white-space:nowrap">'+esc(r['Contact No.'])+'</td><td>'+esc(r['Email'])+'</td><td>'+esc(r['City'])+'</td><td>'+esc(r['Assigned Lane']||'—')+'</td><td>'+esc(r['Assigned To']||'—')+'</td><td>'+(dist?'<span class="pill green">Distributed</span>':'<span class="pill orange">New</span>')+'</td>'
       +'<td><button class="btn '+(dist?'ghost':'primary')+' sm" data-assign="'+esc(r['Client ID'])+'">'+(dist?'Re-assign':'Assign')+'</button></td></tr>';
   });
   html+='</tbody></table></div></div><div class="count">'+list.length+' of '+rows.length+' shown</div>';
@@ -442,17 +500,17 @@ function openAdd(){
 
 function openAssign(clientId){
   const r=DATA.allLeads.find(x=>x['Client ID']===clientId)||{};
-  modal.innerHTML='<h2>Assign Lead</h2><p class="msub">'+esc(r['Name']||'')+' — send to a lane (Lead FMS).</p>'
-    +'<label>Lane</label><select id="m_lane"><option value="1">Lane 1</option><option value="2">Lane 2</option><option value="3">Lane 3</option></select>'
+  modal.innerHTML='<h2>Send to Lead FMS</h2><p class="msub">'+esc(r['Name']||'')+' — choose which Lead FMS to send to.</p>'
+    +'<label>Send to</label><select id="m_lane"><option value="1">Lead FMS 1</option><option value="2">Lead FMS 2</option><option value="3">Lead FMS 3</option></select>'
     +'<label>Assigned To (person)</label><input id="m_assignedTo" placeholder="e.g. Rahul">'
-    +'<div class="actions"><button class="btn ghost" id="m_cancel">Cancel</button><button class="btn primary" id="m_save">Assign</button></div>';
+    +'<div class="actions"><button class="btn ghost" id="m_cancel">Cancel</button><button class="btn primary" id="m_save">Send</button></div>';
   overlay.classList.add('show');
   document.getElementById('m_cancel').onclick=closeModal;
   document.getElementById('m_save').onclick=async()=>{
     const lane=val('m_lane');
-    closeModal(); toast('Assigning…');
+    closeModal(); toast('Sending…');
     await writeThenRefresh({action:'assignLane',clientId:clientId,lane:lane,assignedTo:val('m_assignedTo')});
-    toast('Assigned to Lane '+lane);
+    toast('Sent to Lead FMS '+lane);
   };
 }
 
@@ -474,10 +532,13 @@ function openEdit(sys,clientId){
       +'<label>Assigned To</label><input id="m_assignedTo" value="'+esc(r['Assigned To']||'')+'">'
       +'<label>Scheduled By</label><input id="m_scheduledBy" value="'+esc(r['Scheduled By']||'')+'">';
   } else {
-    inner+='<label>Onboarding Status</label>'+sel('m_onbStatus',['In Progress','Completed'],r['Onboarding Status']||'In Progress')
-      +'<label>Next Planned Date</label><input type="datetime-local" id="m_next" value="'+toDatetimeLocal(r['Next Planned Date'])+'">'
+    inner+='<label>Current Status</label>'+sel('m_stageVal',ONBOARDING_STAGES,r['Current Status']||'Documentation')
+      +'<div class="hintline">Saving sets the next follow-up to +24 hours automatically.</div>'
+      +'<label>Onboarding Status</label>'+sel('m_onbStatus',['In Progress','Completed'],r['Onboarding Status']||'In Progress')
       +'<label>Last Remarks</label><textarea id="m_remarks">'+esc(r['Last Remarks']||'')+'</textarea>'
-      +'<label>Assigned To</label><input id="m_assignedTo" value="'+esc(r['Assigned To']||'')+'">';
+      +'<label>Assigned To</label><input id="m_assignedTo" value="'+esc(r['Assigned To']||'')+'">'
+      +'<label>Upload Document <span class="hintline">'+(r['Document']?'(already uploaded — choose a new file to replace)':'(optional)')+'</span></label><input type="file" id="m_file">'
+      +(r['Document']?'<div class="hintline"><a href="'+esc(r['Document'])+'" target="_blank" rel="noopener">View current document</a></div>':'');
   }
   inner+='<div class="actions"><button class="btn ghost" id="m_cancel">Cancel</button><button class="btn primary" id="m_save">Save</button></div>';
   modal.innerHTML=inner; overlay.classList.add('show');
@@ -487,34 +548,48 @@ function openEdit(sys,clientId){
       remarks:val('m_remarks'),nextPlanned:dtLocalToDMY(val('m_next')),assignedTo:val('m_assignedTo')};
     if(sys.type==='lead'){ body.status=val('m_status'); body.scheduledBy=val('m_scheduledBy'); }
     if(sys.type==='zoom'){ body.status=val('m_status'); body.scheduledBy=val('m_scheduledBy'); body.onboardingStart=val('m_onb'); }
-    if(sys.type==='out'){ body.onboardingStatus=val('m_onbStatus'); }
+    if(sys.type==='out'){ body.onboardingStatus=val('m_onbStatus'); body.stageVal=val('m_stageVal'); }
+    let pendingFile=null;
+    if(sys.type==='out'){ const fi=document.getElementById('m_file'); pendingFile=(fi&&fi.files&&fi.files[0])?fi.files[0]:null; }
     closeModal(); toast('Saving…');
     await writeThenRefresh(body);
+    if(pendingFile){
+      toast('Uploading document…');
+      try{
+        const b64=await fileToBase64(pendingFile);
+        await post({action:'uploadDoc',lane:sys.lane,clientId:clientId,fileName:pendingFile.name,mimeType:pendingFile.type,dataBase64:b64});
+        await new Promise(r=>setTimeout(r,1200));
+        const res=await loadAll(); if(res&&res.success){DATA=res.data;render();}
+        toast('Document uploaded');
+      }catch(e){ toast('Upload failed'); }
+    }
     toast('Saved');
   };
 }
 
 async function moveClient(sys,clientId){
-  if(sys.type==='lead'){ openMoveToZoom(sys,clientId); return; }
-  if(!confirm('Move this client to Outgoing Onboarding (Lane '+sys.lane+')?'))return;
-  toast('Moving…');
-  await writeThenRefresh({action:'moveToOutgoing',lane:sys.lane,clientId:clientId});
-  toast('Moved');
+  if(sys.type==='lead'){ openMoveModal(sys,clientId,'zoom'); return; }
+  openMoveModal(sys,clientId,'out');
 }
-function openMoveToZoom(sys,clientId){
+function openMoveModal(sys,clientId,target){
   const r=rowsFor(sys).find(x=>x['Client ID']===clientId)||{};
-  modal.innerHTML='<h2>Move to Zoom — '+esc(r['Name']||'')+'</h2><p class="msub">Set the first planned date for Zoom FMS '+sys.lane+'. This becomes the client\u2019s first follow-up date there.</p>'
-    +'<label>First Planned Date (Zoom)</label><input type="datetime-local" id="m_next" value="'+toDatetimeLocal(r['Next Planned Date'])+'">'
-    +'<div class="actions"><button class="btn ghost" id="m_cancel">Cancel</button><button class="btn primary" id="m_save">Move to Zoom</button></div>';
+  const destLabel=target==='zoom'?'Zoom FMS':'Outgoing Onboarding';
+  const action=target==='zoom'?'moveToZoom':'moveToOutgoing';
+  modal.innerHTML='<h2>Send to '+destLabel+' — '+esc(r['Name']||'')+'</h2><p class="msub">Choose destination and set the first planned date there.</p>'
+    +'<label>Send to</label><select id="m_dest"><option value="1">'+destLabel+' 1</option><option value="2">'+destLabel+' 2</option><option value="3">'+destLabel+' 3</option></select>'
+    +'<label>First Planned Date</label><input type="datetime-local" id="m_next" value="'+toDatetimeLocal(r['Next Planned Date'])+'">'
+    +'<div class="actions"><button class="btn ghost" id="m_cancel">Cancel</button><button class="btn primary" id="m_save">Send</button></div>';
   overlay.classList.add('show');
+  document.getElementById('m_dest').value=String(sys.lane);
   document.getElementById('m_cancel').onclick=closeModal;
   document.getElementById('m_save').onclick=async()=>{
-    const np=dtLocalToDMY(val('m_next'));
-    closeModal(); toast('Moving…');
-    await writeThenRefresh({action:'moveToZoom',lane:sys.lane,clientId:clientId,nextPlanned:np});
-    toast('Moved to Zoom');
+    const dest=val('m_dest'); const np=dtLocalToDMY(val('m_next'));
+    closeModal(); toast('Sending…');
+    await writeThenRefresh({action:action,lane:sys.lane,destLane:dest,clientId:clientId,nextPlanned:np});
+    toast('Sent to '+destLabel+' '+dest);
   };
 }
+function fileToBase64(file){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(',')[1]); r.onerror=rej; r.readAsDataURL(file); }); }
 async function completeClient(sys,clientId){
   if(!confirm('Mark onboarding as Completed?'))return;
   toast('Updating…');
@@ -532,7 +607,7 @@ function exportCsv(sys){
   let cols;
   if(sys.type==='lead') cols=['Client ID','Name','Contact No.','Email','City','Lead Status','Next Planned Date','Last Remarks','Assigned To','Scheduled By','Updated On'];
   else if(sys.type==='zoom') cols=['Client ID','Name','Contact No.','Email','City','Meeting Status','Next Planned Date','Onboarding Start','Last Remarks','Assigned To','Scheduled By','Updated On'];
-  else cols=['Client ID','Name','Contact No.','Email','City','Onboarding Status','Next Planned Date','Last Remarks','Assigned To','Updated On'];
+  else cols=['Client ID','Name','Contact No.','Email','City','Current Status','Onboarding Status','Next Planned Date','Last Remarks','Document','Updated On'];
   downloadCsv(cols,rows,sys.id);
 }
 function exportAll(){ const cols=['Client ID','Created On','Source','Name','Contact No.','Email','City','Assigned Lane','Assigned To','Status']; downloadCsv(cols,DATA.allLeads,'all_leads'); }
