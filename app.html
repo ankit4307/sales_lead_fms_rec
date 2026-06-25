@@ -169,16 +169,32 @@ const ZOOM_STATUSES = [
 let SYSTEMS = [];
 function buildSystems(){
   const lanes=DATA.laneList||[1,2,3];
-  SYSTEMS=[{id:'allLeads',label:'All Leads',type:'all'},{id:'tracking',label:'Tracking',type:'tracking'}];
-  lanes.forEach(n=>SYSTEMS.push({id:'lead'+n,label:'Lead FMS '+n,type:'lead',lane:n}));
-  lanes.forEach(n=>SYSTEMS.push({id:'zoom'+n,label:'Zoom FMS '+n,type:'zoom',lane:n}));
-  lanes.forEach(n=>SYSTEMS.push({id:'out'+n,label:'Outgoing Onboarding '+n,type:'out',lane:n}));
-  SYSTEMS.push({id:'nbd',label:'NBD Query FMS',type:'nbd'});
+  SYSTEMS=[];
+  if(ROLE==='admin'){
+    SYSTEMS.push({id:'allLeads',label:'All Leads',type:'all'},{id:'tracking',label:'Tracking',type:'tracking'});
+    lanes.forEach(n=>SYSTEMS.push({id:'lead'+n,label:'Lead FMS '+n,type:'lead',lane:n}));
+    lanes.forEach(n=>SYSTEMS.push({id:'zoom'+n,label:'Zoom FMS '+n,type:'zoom',lane:n}));
+    lanes.forEach(n=>SYSTEMS.push({id:'out'+n,label:'Outgoing Onboarding '+n,type:'out',lane:n}));
+    SYSTEMS.push({id:'nbd',label:'NBD Query FMS',type:'nbd'});
+  } else if(ROLE==='lead'){
+    SYSTEMS.push({id:'allLeads',label:'All Leads',type:'all'});
+    SYSTEMS.push({id:'lead'+LANE,label:'Lead FMS '+LANE,type:'lead',lane:LANE});
+  } else if(ROLE==='zoom'){
+    SYSTEMS.push({id:'zoom'+LANE,label:'Zoom FMS '+LANE,type:'zoom',lane:LANE});
+  } else if(ROLE==='onboarding'){
+    SYSTEMS.push({id:'out'+LANE,label:'Outgoing Onboarding '+LANE,type:'out',lane:LANE});
+    SYSTEMS.push({id:'nbd',label:'NBD Query FMS',type:'nbd'});
+  } else {
+    SYSTEMS.push({id:'allLeads',label:'All Leads',type:'all'});
+  }
+  if(!SYSTEMS.find(s=>s.id===current)) current=SYSTEMS.length?SYSTEMS[0].id:'allLeads';
 }
 
 let KEY = '';
 let ROLE = 'app';
-let DATA = {allLeads:[], lanes:{1:{lead:[],zoom:[],out:[]},2:{lead:[],zoom:[],out:[]},3:{lead:[],zoom:[],out:[]}}, laneList:[1,2,3], nbd:[], employees:[]};
+let LANE = '';
+let NAME = '';
+let DATA = {allLeads:[], lanes:{}, laneList:[1,2,3], nbd:[], employees:[], coordinators:{client:[],meeting:[],onboarding:[]}};
 let current = 'allLeads';
 let bucketFilter = '';
 let searchText = '';
@@ -220,7 +236,7 @@ async function doLogin(){
   try{
     KEY=k;
     const res=await loadAll();
-    if(res&&res.success){ ROLE=res.role||'app'; DATA=res.data; sessionStorage.setItem('lb_key',k); enterApp(); }
+    if(res&&res.success){ ROLE=res.role||'app'; LANE=res.lane||''; NAME=res.name||''; DATA=res.data; sessionStorage.setItem('lb_key',k); enterApp(); }
     else{ loginErr.textContent=(res&&res.error)||'Wrong password.'; loginErr.classList.add('show'); KEY=''; }
   }catch(e){ loginErr.textContent='Could not connect. Check URL/connection.'; loginErr.classList.add('show'); KEY=''; }
   loginBtn.disabled=false; loginBtn.textContent='Log in';
@@ -232,7 +248,7 @@ document.getElementById('logoutBtn').addEventListener('click',()=>{sessionStorag
 (async function(){
   const saved=sessionStorage.getItem('lb_key');
   if(saved&&SCRIPT_URL.indexOf('PASTE_YOUR')!==0){
-    try{ KEY=saved; const res=await loadAll(); if(res&&res.success){ROLE=res.role||'app';DATA=res.data;enterApp();} else {KEY='';} }catch(e){KEY='';}
+    try{ KEY=saved; const res=await loadAll(); if(res&&res.success){ROLE=res.role||'app';LANE=res.lane||'';NAME=res.name||'';DATA=res.data;enterApp();} else {KEY='';} }catch(e){KEY='';}
   }
 })();
 
@@ -241,18 +257,25 @@ function enterApp(){ loginWrap.style.display='none'; app.classList.add('show'); 
 // ---------- Nav ----------
 function buildNav(){
   const nav=document.getElementById('navList');
-  const lanes=DATA.laneList||[1,2,3];
-  const master = (ROLE==='admin') ? ['allLeads','tracking'] : ['allLeads'];
-  const groups=[['Master',master],['Lead FMS',lanes.map(n=>'lead'+n)],['Zoom FMS',lanes.map(n=>'zoom'+n)],['Outgoing Onboarding',lanes.map(n=>'out'+n)],['NBD',['nbd']]];
+  const by=t=>SYSTEMS.filter(s=>s.type===t).map(s=>s.id);
+  const groups=[
+    ['Master', SYSTEMS.filter(s=>s.type==='all'||s.type==='tracking').map(s=>s.id)],
+    ['Lead FMS', by('lead')],
+    ['Zoom FMS', by('zoom')],
+    ['Outgoing Onboarding', by('out')],
+    ['NBD', by('nbd')]
+  ];
   let html='';
   groups.forEach(([g,ids])=>{
+    if(!ids.length) return;
     html+='<div class="group">'+g+'</div>';
     ids.forEach(id=>{ const s=SYSTEMS.find(x=>x.id===id); if(s) html+='<button class="nav" data-id="'+id+'">'+s.label+'</button>'; });
   });
-  if(ROLE==='admin') html+='<div class="group">Settings</div><button class="nav" id="manageLanes">⚙ Manage Lanes</button>';
+  if(ROLE==='admin') html+='<div class="group">Settings</div><button class="nav" id="manageUsers">⚙ Manage Users</button><button class="nav" id="manageLanes">⚙ Manage Lanes</button>';
   nav.innerHTML=html;
   nav.querySelectorAll('.nav').forEach(b=>{
     if(b.id==='manageLanes') b.addEventListener('click',openManageLanes);
+    else if(b.id==='manageUsers') b.addEventListener('click',openManageUsers);
     else b.addEventListener('click',()=>{current=b.dataset.id;bucketFilter='';searchText='';render();});
   });
 }
@@ -278,7 +301,7 @@ function fmtDT(v){
 function bucketOf(v){
   const d=toDate(v); if(!d) return 'none';
   const today=startOfDay(new Date()); const diff=Math.round((startOfDay(d)-today)/86400000);
-  if(diff<0) return 'overdue'; if(diff===0) return 'today'; if(diff===1) return 'tomorrow'; if(diff===2) return 'dayafter'; return 'later';
+  if(diff<0) return 'pastdue'; if(diff===0) return 'currentdue'; return 'future';
 }
 function toDatetimeLocal(v){ const d=toDate(v); if(!d) return ''; return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes()); }
 function dtLocalToDMY(s){ const m=String(s||'').match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/); return m?(m[3]+'/'+m[2]+'/'+m[1]+' '+m[4]+':'+m[5]+':00'):''; }
@@ -292,7 +315,7 @@ function computeNext(stage,status,manualDMY){
 }
 
 // ---------- Data access ----------
-function rowsFor(sys){ if(sys.type==='all')return DATA.allLeads; return DATA.lanes[sys.lane][sys.type]; }
+function rowsFor(sys){ if(sys.type==='all')return DATA.allLeads||[]; return (DATA.lanes[sys.lane]&&DATA.lanes[sys.lane][sys.type])||[]; }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
 // ---------- Render ----------
@@ -316,7 +339,7 @@ function activeRows(sys){
 }
 
 function bucketCounts(rows){
-  const c={overdue:0,today:0,tomorrow:0,dayafter:0,later:0,none:0};
+  const c={pastdue:0,currentdue:0,future:0,none:0};
   rows.forEach(r=>{c[bucketOf(r['Next Planned Date'])]++;});
   return c;
 }
@@ -327,14 +350,13 @@ function renderStage(sys){
   const stageLabel={lead:'Lead',zoom:'Zoom',out:'Onboarding'}[sys.type];
   let html='';
   let sub = rows.length+' clients in this system';
-  if(sys.type==='out'){ const comp=rows.filter(r=>r['Onboarding Status']==='Completed').length; sub=rows.length+' clients &nbsp; <span class="pill orange">'+(rows.length-comp)+' Under Process</span> &nbsp; <span class="pill green">'+comp+' Completed</span>'; }
+  if(sys.type==='out'){ const done=rows.filter(r=>r['Onboarding Status']==='Done').length; const nr=rows.filter(r=>r['Onboarding Status']==='Not Required').length; sub=rows.length+' clients &nbsp; <span class="pill orange">'+(rows.length-done-nr)+' Under Process</span> &nbsp; <span class="pill green">'+done+' Done</span>'; }
   html+='<div class="head"><h1>'+esc(sys.label)+'</h1><span class="sub">'+sub+'</span><span class="spacer"></span></div>';
   html+='<div class="tabs">'
     +stageTab('','Home',rows.length)
-    +stageTab('overdue','Overdue',c.overdue)
-    +stageTab('today','Today',c.today)
-    +stageTab('tomorrow','Tomorrow',c.tomorrow)
-    +stageTab('dayafter','Day After',c.dayafter)
+    +stageTab('pastdue','Past Due',c.pastdue)
+    +stageTab('currentdue','Current Due',c.currentdue)
+    +stageTab('future','In Future',c.future)
     +'</div>';
   html+='<div class="toolbar"><input type="text" id="search" placeholder="Search name, email, phone, city…" value="'+esc(searchText)+'"><button class="btn ghost sm" id="refreshBtn">↻ Refresh</button><button class="btn dark sm" id="exportBtn">Export CSV</button></div>';
 
@@ -343,9 +365,9 @@ function renderStage(sys){
 
   // table head per stage
   let cols;
-  if(sys.type==='lead') cols=['Name','Contact','City','Status','Next Planned','Last Remarks','Assigned To','Scheduled By','Actions'];
-  else if(sys.type==='zoom') cols=['Name','Contact','City','Meeting Status','Next Planned','Onboarding','Last Remarks','Assigned To','Actions'];
-  else cols=['Name','Contact','City','Current Status','Onboarding','Next Planned','Doc','Last Remarks','Assigned To','Actions'];
+  if(sys.type==='lead') cols=['Name','Contact','City','Status','Next Planned','Last Remarks','Meeting Co-ord.','Scheduled By','Actions'];
+  else if(sys.type==='zoom') cols=['Name','Contact','City','Meeting Status','Next Planned','Onboarding','Last Remarks','Onboarding Co.','Actions'];
+  else cols=['Name','Contact','City','Current Status','Onboarding','Next Planned','Doc','Last Remarks','Coordinator','Actions'];
 
   html+='<div class="tablecard"><div class="scroll"><table><thead><tr>'+cols.map(c=>'<th>'+c+'</th>').join('')+'</tr></thead><tbody>';
   if(!list.length){ html+='<tr><td colspan="'+cols.length+'" class="empty">No clients here.</td></tr>'; }
@@ -361,7 +383,7 @@ function renderStage(sys){
 function bucketCard(key,label,n){ const on=(bucketFilter===key)?' on':''; return '<div class="bucket '+key+on+'" data-b="'+key+'"><div class="lbl">'+label+'</div><div class="n">'+n+'</div></div>'; }
 function stageTab(key,label,n){ const on=(bucketFilter===key)?' on':''; return '<button class="tab '+key+on+'" data-b="'+key+'">'+label+'<span class="cnt">'+n+'</span></button>'; }
 
-function dateCell(s){ const b=bucketOf(s); return '<span class="date'+(b==='overdue'?' over':'')+'">'+esc(fmtDT(s)||'—')+'</span>'; }
+function dateCell(s){ const b=bucketOf(s); return '<span class="date'+(b==='pastdue'?' over':'')+'">'+esc(fmtDT(s)||'—')+'</span>'; }
 function meetPill(v){ v=(v||'').trim(); if(!v)return'—'; const map={Yes:'green',Maybe:'orange',No:'grey'}; return '<span class="pill '+(map[v]||'blue')+'">'+esc(v)+'</span>'; }
 
 function rowHtml(sys,r){
@@ -373,7 +395,7 @@ function rowHtml(sys,r){
       +'<td>'+dateCell(r['Next Planned Date'])+'</td>'
       +'<td class="wrap">'+esc(r['Last Remarks']||'—')+'</td>'
       +'<td>'+esc(r['Assigned To']||'—')+'</td><td>'+esc(r['Scheduled By']||'—')+'</td>'
-      +'<td><div class="rowbtns"><button class="btn ghost sm" data-edit="'+esc(id)+'">Edit</button><button class="btn primary sm" data-move="'+esc(id)+'">→ Zoom</button></div></td></tr>';
+      +'<td><div class="rowbtns"><button class="btn ghost sm" data-edit="'+esc(id)+'">Action</button><button class="btn primary sm" data-move="'+esc(id)+'">→ Zoom</button></div></td></tr>';
   }
   if(sys.type==='zoom'){
     return '<tr>'+base
@@ -382,17 +404,18 @@ function rowHtml(sys,r){
       +'<td>'+meetPill(r['Onboarding Start'])+'</td>'
       +'<td class="wrap">'+esc(r['Last Remarks']||'—')+'</td>'
       +'<td>'+esc(r['Assigned To']||'—')+'</td>'
-      +'<td><div class="rowbtns"><button class="btn ghost sm" data-edit="'+esc(id)+'">Edit</button><button class="btn primary sm" data-move="'+esc(id)+'">&rarr; Onboarding</button></div></td></tr>';
+      +'<td><div class="rowbtns"><button class="btn ghost sm" data-edit="'+esc(id)+'">Action</button><button class="btn primary sm" data-move="'+esc(id)+'">&rarr; Onboarding</button></div></td></tr>';
   }
   return '<tr>'+base
     +'<td>'+(r['Current Status']?'<span class="pill blue">'+esc(r['Current Status'])+'</span>':'—')+'</td>'
-    +'<td>'+(r['Onboarding Status']==='Completed'?'<span class="pill green">Completed</span>':'<span class="pill orange">In Progress</span>')+'</td>'
+    +'<td>'+onbPill(r['Onboarding Status'])+'</td>'
     +'<td>'+dateCell(r['Next Planned Date'])+'</td>'
     +'<td>'+(r['Document']?'<a href="'+esc(r['Document'])+'" target="_blank" rel="noopener">View</a>':'—')+'</td>'
     +'<td class="wrap">'+esc(r['Last Remarks']||'—')+'</td>'
     +'<td>'+esc(r['Assigned To']||'—')+'</td>'
-    +'<td><div class="rowbtns"><button class="btn ghost sm" data-edit="'+esc(id)+'">Edit</button><button class="btn dark sm" data-complete="'+esc(id)+'">Complete</button></div></td></tr>';
+    +'<td><div class="rowbtns"><button class="btn ghost sm" data-edit="'+esc(id)+'">Action</button><button class="btn dark sm" data-complete="'+esc(id)+'">Complete</button></div></td></tr>';
 }
+function onbPill(v){ v=(v||'Under Process'); if(v==='Done')return'<span class="pill green">Done</span>'; if(v==='Not Required')return'<span class="pill grey">Not Required</span>'; return'<span class="pill orange">Under Process</span>'; }
 
 function filterRows(rows){
   const q=searchText.trim().toLowerCase();
@@ -419,7 +442,7 @@ async function refresh(){ const res=await loadAll(); if(res&&res.success){DATA=r
 // ---------- Tracking (admin) ----------
 function locateClient(id){
   const lanes=DATA.laneList||[];
-  for(const n of lanes){ const r=DATA.lanes[n].out.find(x=>x['Client ID']===id); if(r) return {stage:'Outgoing Onboarding '+n, status:r['Current Status']||'In Progress', completed:r['Onboarding Status']==='Completed', remarks:r['Last Remarks'], next:r['Next Planned Date'], doc:r['Document']}; }
+  for(const n of lanes){ const r=DATA.lanes[n].out.find(x=>x['Client ID']===id); if(r) return {stage:'Outgoing Onboarding '+n, status:r['Current Status']||'In Progress', completed:r['Onboarding Status']==='Done', remarks:r['Last Remarks'], next:r['Next Planned Date'], doc:r['Document']}; }
   for(const n of lanes){ const r=DATA.lanes[n].zoom.find(x=>x['Client ID']===id&&!isMoved(x)); if(r) return {stage:'Zoom FMS '+n, status:r['Meeting Status']||'—', completed:false, remarks:r['Last Remarks'], next:r['Next Planned Date'], doc:''}; }
   for(const n of lanes){ const r=DATA.lanes[n].lead.find(x=>x['Client ID']===id&&!isMoved(x)); if(r) return {stage:'Lead FMS '+n, status:r['Lead Status']||'—', completed:false, remarks:r['Last Remarks'], next:r['Next Planned Date'], doc:''}; }
   return {stage:'All Leads (unassigned)', status:'New', completed:false, remarks:'', next:'', doc:''};
@@ -440,7 +463,7 @@ function renderTracking(){
     html+='<tr><td>'+esc(r['Name'])+'</td><td style="white-space:nowrap">'+esc(r['Contact No.'])+'</td><td>'+esc(r['City'])+'</td>'
       +'<td><span class="pill blue">'+esc(loc.stage)+'</span></td>'
       +'<td>'+esc(loc.status||'—')+'</td>'
-      +'<td>'+(loc.completed?'<span class="pill green">Completed</span>':'<span class="pill grey">No</span>')+'</td>'
+      +'<td>'+(loc.completed?'<span class="pill green">Done</span>':'<span class="pill grey">No</span>')+'</td>'
       +'<td>'+dateCell(loc.next)+'</td>'
       +'<td class="wrap">'+esc(loc.remarks||'—')+'</td>'
       +'<td>'+(loc.doc?'<a href="'+esc(loc.doc)+'" target="_blank" rel="noopener">View</a>':'—')+'</td></tr>';
@@ -481,7 +504,7 @@ function renderNbd(sys){
       +'<td>'+nbdQueryPill(r['Query Status'])+'</td>'
       +'<td>'+dateCell(r['Next Planned Date'])+'</td>'
       +'<td>'+esc(r['Employee']||'—')+'</td>'
-      +'<td><button class="btn ghost sm" data-qedit="'+esc(r['Query ID'])+'">Edit</button></td></tr>';
+      +'<td><button class="btn ghost sm" data-qedit="'+esc(r['Query ID'])+'">Action</button></td></tr>';
   });
   html+='</tbody></table></div></div><div class="count">'+list.length+' of '+rows.length+' shown</div>';
   document.getElementById('view').innerHTML=html;
@@ -569,7 +592,7 @@ function renderAll(sys){
   html+='<div class="toolbar"><input type="text" id="search" placeholder="Search name, email, phone, city…" value="'+esc(searchText)+'"><button class="btn ghost sm" id="refreshBtn">↻ Refresh</button><button class="btn dark sm" id="exportBtn">Export CSV</button></div>';
   const q=searchText.trim().toLowerCase();
   const list=rows.filter(r=>!q||[r['Name'],r['Email'],r['Contact No.'],r['City']].join(' ').toLowerCase().includes(q));
-  const cols=['Created On','Source','Name','Contact','Email','City','Lane','Assigned To','Status','Actions'];
+  const cols=['Created On','Source','Name','Contact','Email','City','Lane','Client Coordinator','Status','Actions'];
   html+='<div class="tablecard"><div class="scroll"><table><thead><tr>'+cols.map(c=>'<th>'+c+'</th>').join('')+'</tr></thead><tbody>';
   if(!list.length) html+='<tr><td colspan="'+cols.length+'" class="empty">No leads yet.</td></tr>';
   else list.forEach(r=>{
@@ -615,7 +638,7 @@ function openAssign(clientId){
   const r=DATA.allLeads.find(x=>x['Client ID']===clientId)||{};
   modal.innerHTML='<h2>Send to Lead FMS</h2><p class="msub">'+esc(r['Name']||'')+' — choose which Lead FMS to send to.</p>'
     +'<label>Send to</label>'+laneSelect('m_lane','Lead FMS','')
-    +'<label>Assigned To (person)</label><input id="m_assignedTo" placeholder="e.g. Rahul">'
+    +'<label>Client Coordinator</label>'+coordSelect('m_assignedTo','client',r['Assigned To']||'')
     +'<div class="actions"><button class="btn ghost" id="m_cancel">Cancel</button><button class="btn primary" id="m_save">Send</button></div>';
   overlay.classList.add('show');
   document.getElementById('m_cancel').onclick=closeModal;
@@ -629,36 +652,41 @@ function openAssign(clientId){
 
 function openEdit(sys,clientId){
   const r=rowsFor(sys).find(x=>x['Client ID']===clientId)||{};
-  let inner='<h2>Update — '+esc(r['Name']||'')+'</h2><p class="msub">'+esc(sys.label)+'</p>';
+  let inner='<h2>Action — '+esc(r['Name']||'')+'</h2><p class="msub">'+esc(sys.label)+'</p>';
+  inner+='<label>Contact mode</label>'+sel('m_contact',['—','Call Connected','WhatsApp Chat','Not Picked'],'—')
+    +'<label>Was the call productive?</label>'+sel('m_productive',['—','Yes','No'],'—');
   if(sys.type==='lead'){
     inner+='<label>Lead Status</label>'+sel('m_status',LEAD_STATUSES,r['Lead Status'])
       +'<label>Next Planned Date <span class="hintline">(used for "Time Given"; auto for others)</span></label><input type="datetime-local" id="m_next" value="'+toDatetimeLocal(r['Next Planned Date'])+'">'
-      +'<label>Last Remarks</label><textarea id="m_remarks">'+esc(r['Last Remarks']||'')+'</textarea>'
-      +'<label>Assigned To</label><input id="m_assignedTo" value="'+esc(r['Assigned To']||'')+'">'
+      +'<label>Done Remark</label><textarea id="m_remarks">'+esc(r['Last Remarks']||'')+'</textarea>'
+      +'<label>Meeting Co-ordinator</label>'+coordSelect('m_assignedTo','meeting',r['Assigned To']||'')
       +'<label>Scheduled By</label><input id="m_scheduledBy" value="'+esc(r['Scheduled By']||'')+'">';
   } else if(sys.type==='zoom'){
     inner+='<label>Meeting Status</label>'+sel('m_status',ZOOM_STATUSES,r['Meeting Status'])
       +'<label>Next Planned Date <span class="hintline">(auto for Not Attend/Responding/Follow up; blank for No Meeting/Not Eligible)</span></label><input type="datetime-local" id="m_next" value="'+toDatetimeLocal(r['Next Planned Date'])+'">'
       +'<label>Onboarding Start</label>'+sel('m_onb',['No','Yes'],r['Onboarding Start']||'No')
       +'<div class="hintline">Onboarding Start = Yes → client moves to Outgoing Onboarding.</div>'
-      +'<label>Last Remarks</label><textarea id="m_remarks">'+esc(r['Last Remarks']||'')+'</textarea>'
-      +'<label>Assigned To</label><input id="m_assignedTo" value="'+esc(r['Assigned To']||'')+'">'
+      +'<label>Done Remark</label><textarea id="m_remarks">'+esc(r['Last Remarks']||'')+'</textarea>'
+      +'<label>Onboarding Coordinator</label>'+coordSelect('m_assignedTo','onboarding',r['Assigned To']||'')
       +'<label>Scheduled By</label><input id="m_scheduledBy" value="'+esc(r['Scheduled By']||'')+'">';
   } else {
     inner+='<label>Current Status</label>'+sel('m_stageVal',ONBOARDING_STAGES,r['Current Status']||'Documentation')
       +'<div class="hintline">Saving sets the next follow-up to +24 hours automatically.</div>'
-      +'<label>Onboarding Status</label>'+sel('m_onbStatus',['In Progress','Completed'],r['Onboarding Status']||'In Progress')
-      +'<label>Last Remarks</label><textarea id="m_remarks">'+esc(r['Last Remarks']||'')+'</textarea>'
-      +'<label>Assigned To</label><input id="m_assignedTo" value="'+esc(r['Assigned To']||'')+'">'
+      +'<label>Onboarding Status</label>'+sel('m_onbStatus',['Under Process','Done','Not Required'],r['Onboarding Status']||'Under Process')
+      +'<label>Done Remark</label><textarea id="m_remarks">'+esc(r['Last Remarks']||'')+'</textarea>'
+      +'<label>Onboarding Coordinator</label>'+coordSelect('m_assignedTo','onboarding',r['Assigned To']||'')
       +'<label>Upload Document <span class="hintline">'+(r['Document']?'(already uploaded — choose a new file to replace)':'(optional)')+'</span></label><input type="file" id="m_file">'
       +(r['Document']?'<div class="hintline"><a href="'+esc(r['Document'])+'" target="_blank" rel="noopener">View current document</a></div>':'');
   }
-  inner+='<div class="actions"><button class="btn ghost" id="m_cancel">Cancel</button><button class="btn primary" id="m_save">Save</button></div>';
+  inner+='<div class="actions"><button class="btn ghost" id="m_cancel">Cancel</button><button class="btn primary" id="m_save">Save Done</button></div>';
   modal.innerHTML=inner; overlay.classList.add('show');
   document.getElementById('m_cancel').onclick=closeModal;
   document.getElementById('m_save').onclick=async()=>{
     const body={action:'updateRow',stage:sys.type,lane:sys.lane,clientId:clientId,
       remarks:val('m_remarks'),nextPlanned:dtLocalToDMY(val('m_next')),assignedTo:val('m_assignedTo')};
+    const cm=val('m_contact'), pr=val('m_productive');
+    if(cm&&cm!=='—') body.contactMode=cm;
+    if(pr&&pr!=='—') body.productive=pr;
     if(sys.type==='lead'){ body.status=val('m_status'); body.scheduledBy=val('m_scheduledBy'); }
     if(sys.type==='zoom'){ body.status=val('m_status'); body.scheduledBy=val('m_scheduledBy'); body.onboardingStart=val('m_onb'); }
     if(sys.type==='out'){ body.onboardingStatus=val('m_onbStatus'); body.stageVal=val('m_stageVal'); }
@@ -713,7 +741,40 @@ async function completeClient(sys,clientId){
 function val(id){ const el=document.getElementById(id); return el?el.value.trim():''; }
 function sel(id,opts,cur){ return '<select id="'+id+'">'+opts.map(o=>'<option'+(o===cur?' selected':'')+'>'+esc(o)+'</option>').join('')+'</select>'; }
 function laneSelect(id,label,cur){ const lanes=DATA.laneList||[1,2,3]; return '<select id="'+id+'">'+lanes.map(n=>'<option value="'+n+'"'+(String(cur)===String(n)?' selected':'')+'>'+label+' '+n+'</option>').join('')+'</select>'; }
+function coordSelect(id,kind,cur){ const c=DATA.coordinators||{}; const list=(c[kind]||[]); let opts='<option value="">— Select —</option>'+list.map(n=>'<option'+(String(cur)===String(n)?' selected':'')+'>'+esc(n)+'</option>').join(''); if(cur&&list.indexOf(cur)<0) opts+='<option selected>'+esc(cur)+'</option>'; return '<select id="'+id+'">'+opts+'</select>'; }
 
+function openManageUsers(){
+  const users=(DATA.users||[]);
+  const lanes=DATA.laneList||[1,2,3];
+  const roleOpts=['admin','lead','zoom','onboarding'];
+  let inner='<h2>Manage Users</h2><p class="msub">Each employee logs in with their own password and sees only their system. Admin sees everything.</p>';
+  inner+='<div id="userList">'+(users.length?users.map(u=>(
+    '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid var(--line)">'
+    +'<span><b>'+esc(u.name||'(no name)')+'</b> &nbsp; <span class="hintline">'+esc(u.role)+(u.lane?(' · lane '+esc(u.lane)):'')+' · pw: '+esc(u.password)+'</span></span>'
+    +'<button class="btn ghost sm" data-userremove="'+esc(u.password)+'">Remove</button></div>'
+  )).join(''):'<div class="hintline">No employees yet. Add one below.</div>')+'</div>';
+  inner+='<div style="margin-top:12px;border-top:1px solid var(--line);padding-top:12px">'
+    +'<label>Name</label><input id="u_name" placeholder="e.g. Sunayana">'
+    +'<label>Password</label><input id="u_pw" placeholder="login password">'
+    +'<label>Role</label>'+sel('u_role',roleOpts,'lead')
+    +'<label>Lane <span class="hintline">(1, 2, 3… — admin ke liye blank chhodein)</span></label>'
+    +'<select id="u_lane"><option value="">—</option>'+lanes.map(n=>'<option>'+n+'</option>').join('')+'</select>'
+    +'</div>';
+  inner+='<div class="actions"><button class="btn ghost" id="m_cancel">Close</button><button class="btn primary" id="m_addUser">+ Add User</button></div>';
+  modal.innerHTML=inner; overlay.classList.add('show');
+  document.getElementById('m_cancel').onclick=closeModal;
+  document.getElementById('m_addUser').onclick=async()=>{
+    const pw=val('u_pw'), nm=val('u_name'), role=val('u_role'), lane=val('u_lane');
+    if(!pw){toast('Password zaroori hai');return;}
+    if(role!=='admin' && !lane){toast('Lane select karein');return;}
+    toast('Adding…'); await writeThenRefresh({action:'userAdd',password:pw,name:nm,role:role,lane:lane}); openManageUsers(); toast('User added');
+  };
+  document.querySelectorAll('[data-userremove]').forEach(b=>b.addEventListener('click',async()=>{
+    const pw=b.dataset.userremove;
+    if(!confirm('Remove this user? Woh login nahi kar payega.'))return;
+    toast('Removing…'); await writeThenRefresh({action:'userRemove',password:pw}); openManageUsers(); toast('User removed');
+  }));
+}
 function openManageLanes(){
   const lanes=DATA.laneList||[];
   let inner='<h2>Manage Lanes</h2><p class="msub">Each lane = Lead FMS, Zoom FMS &amp; Outgoing Onboarding with that number. Add a lane when a new employee joins.</p>';

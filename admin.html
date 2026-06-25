@@ -170,7 +170,7 @@ async function refresh(){const res=await loadAll();if(res&&res.success){DATA=res
 function allClients(){return DATA.allLeads;}
 function locate(id){
   const lanes=DATA.laneList||[];
-  for(const n of lanes){const r=DATA.lanes[n].out.find(x=>x['Client ID']===id);if(r)return{stage:'Outgoing Onboarding '+n,status:r['Current Status']||'In Progress',completed:r['Onboarding Status']==='Completed',remarks:r['Last Remarks'],next:r['Next Planned Date'],doc:r['Document']};}
+  for(const n of lanes){const r=DATA.lanes[n].out.find(x=>x['Client ID']===id);if(r)return{stage:'Outgoing Onboarding '+n,status:r['Current Status']||'In Progress',completed:r['Onboarding Status']==='Done',remarks:r['Last Remarks'],next:r['Next Planned Date'],doc:r['Document']};}
   for(const n of lanes){const r=DATA.lanes[n].zoom.find(x=>x['Client ID']===id&&!isMoved(x));if(r)return{stage:'Zoom FMS '+n,status:r['Meeting Status']||'—',completed:false,remarks:r['Last Remarks'],next:r['Next Planned Date'],doc:''};}
   for(const n of lanes){const r=DATA.lanes[n].lead.find(x=>x['Client ID']===id&&!isMoved(x));if(r)return{stage:'Lead FMS '+n,status:r['Lead Status']||'—',completed:false,remarks:r['Last Remarks'],next:r['Next Planned Date'],doc:''};}
   return{stage:'All Leads (unassigned)',status:'New',completed:false,remarks:'',next:'',doc:''};
@@ -200,7 +200,7 @@ function renderTracking(){
   else rows.forEach(({lead:r,loc})=>{
     h+='<tr><td>'+esc(r['Name'])+'</td><td style="white-space:nowrap">'+esc(r['Contact No.'])+'</td><td>'+esc(r['City'])+'</td>'
       +'<td><span class="pill blue">'+esc(loc.stage)+'</span></td><td>'+esc(loc.status||'—')+'</td>'
-      +'<td>'+(loc.completed?'<span class="pill green">Completed</span>':'<span class="pill grey">No</span>')+'</td>'
+      +'<td>'+(loc.completed?'<span class="pill green">Done</span>':'<span class="pill grey">No</span>')+'</td>'
       +'<td>'+dateCell(loc.next)+'</td><td class="wrap">'+esc(loc.remarks||'—')+'</td>'
       +'<td>'+(loc.doc?'<a href="'+esc(loc.doc)+'" target="_blank" rel="noopener">View</a>':'—')+'</td></tr>';
   });
