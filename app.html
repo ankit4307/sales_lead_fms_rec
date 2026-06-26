@@ -592,34 +592,73 @@ function openManageEmployees(){
 }
 
 // ---------- All Leads view ----------
+let allLeadsTab = ''; // '', 'Monthly', 'Not Required'
+
 function renderAll(sys){
-  const rows=[...(DATA.allLeads||[])].sort((a,b)=>{const x=toDate(a['Created On']),y=toDate(b['Created On']);return (y?y.getTime():0)-(x?x.getTime():0);});
+  const allRows=[...(DATA.allLeads||[])].sort((a,b)=>{const x=toDate(a['Created On']),y=toDate(b['Created On']);return (y?y.getTime():0)-(x?x.getTime():0);});
   const canDel=(ROLE==='admin'||ROLE==='lead');
+
+  // Tab filter
+  let rows=allRows;
+  if(allLeadsTab==='Monthly') rows=allRows.filter(r=>r['Investment Status']==='Monthly');
+  else if(allLeadsTab==='Not Required') rows=allRows.filter(r=>r['Investment Status']==='Not Required');
+
+  // Duplicate detection (phone or email match)
+  const phoneCount={}, emailCount={};
+  allRows.forEach(r=>{ if(r['Contact No.']) phoneCount[r['Contact No.']]=(phoneCount[r['Contact No.']]||0)+1; if(r['Email']) emailCount[r['Email']]=(emailCount[r['Email']]||0)+1; });
+
+  const mCnt=allRows.filter(r=>r['Investment Status']==='Monthly').length;
+  const nrCnt=allRows.filter(r=>r['Investment Status']==='Not Required').length;
+
   let html='';
-  html+='<div class="head"><h1>All Leads</h1><span class="sub">'+rows.length+' total</span><span class="spacer"></span><button class="btn primary" id="addBtn">+ Add Lead</button></div>';
+  html+='<div class="head"><h1>All Leads</h1><span class="sub">'+allRows.length+' total</span><span class="spacer"></span><button class="btn primary" id="addBtn">+ Add Lead</button></div>';
+
+  // 3 tabs
+  html+='<div class="tabs">'
+    +'<button class="tab '+(allLeadsTab===''?'on':'')+'" data-altab="">All <span class="cnt">'+allRows.length+'</span></button>'
+    +'<button class="tab '+(allLeadsTab==='Monthly'?'on':'')+'" data-altab="Monthly">Monthly <span class="cnt">'+mCnt+'</span></button>'
+    +'<button class="tab '+(allLeadsTab==='Not Required'?'on':'')+'" data-altab="Not Required">Not Required <span class="cnt">'+nrCnt+'</span></button>'
+    +'</div>';
+
   html+='<div class="toolbar"><input type="text" id="search" placeholder="Search name, email, phone, city…" value="'+esc(searchText)+'"><button class="btn ghost sm" id="refreshBtn">↻ Refresh</button><button class="btn dark sm" id="exportBtn">Export CSV</button></div>';
   const q=searchText.trim().toLowerCase();
   const list=rows.filter(r=>!q||[r['Name'],r['Email'],r['Contact No.'],r['City']].join(' ').toLowerCase().includes(q));
-  const cols=['Created On','Source','Name','Contact','Email','City','Lane','Client Co-ordinator','Status','Actions'];
+  const cols=['Created On','Source','Name','Contact','Email','City','Lane','Client Co-ordinator','Status','Inv. Status','Actions'];
   html+='<div class="tablecard"><div class="scroll"><table><thead><tr>'+cols.map(c=>'<th>'+c+'</th>').join('')+'</tr></thead><tbody>';
-  if(!list.length) html+='<tr><td colspan="'+cols.length+'" class="empty">No leads yet.</td></tr>';
+  if(!list.length) html+='<tr><td colspan="'+cols.length+'" class="empty">No leads here.</td></tr>';
   else list.forEach(r=>{
     const dist=r['Status']==='Distributed';
-    html+='<tr><td style="white-space:nowrap">'+esc(fmtDT(r['Created On']))+'</td><td><span class="pill '+(r['Source']==='Self'?'blue':'grey')+'">'+esc(r['Source']||'—')+'</span></td><td>'+esc(r['Name'])+'</td><td style="white-space:nowrap">'+esc(r['Contact No.'])+'</td><td>'+esc(r['Email'])+'</td><td>'+esc(r['City'])+'</td><td>'+esc(r['Assigned Lane']||'—')+'</td><td>'+esc(r['Assigned To']||'—')+'</td><td>'+(dist?'<span class="pill green">Distributed</span>':'<span class="pill orange">New</span>')+'</td>'
-      +'<td><div class="rowbtns"><button class="btn '+(dist?'ghost':'primary')+' sm" data-assign="'+esc(r['Client ID'])+'">'+(dist?'Re-assign':'Assign')+'</button>'
-      +(canDel?'<button class="btn ghost sm" style="color:var(--err)" data-dupdelete="'+esc(r['Client ID'])+'">Duplicate</button>':'')
+    const isDup=(phoneCount[r['Contact No.']]>1)||(r['Email']&&emailCount[r['Email']]>1);
+    const invSt=r['Investment Status']||'';
+    const invPill=invSt==='Monthly'?'<span class="pill blue">Monthly</span>':invSt==='Not Required'?'<span class="pill grey">Not Required</span>':'—';
+    html+='<tr'+(isDup?' style="background:#fff8f0"':'')+'>'
+      +'<td style="white-space:nowrap">'+esc(fmtDT(r['Created On']))+'</td>'
+      +'<td><span class="pill '+(r['Source']==='Self'?'blue':'grey')+'">'+esc(r['Source']||'—')+'</span></td>'
+      +'<td>'+esc(r['Name'])+(isDup?' <span class="pill red" title="Duplicate phone/email">Dup</span>':'')+'</td>'
+      +'<td style="white-space:nowrap">'+esc(r['Contact No.'])+'</td>'
+      +'<td>'+esc(r['Email'])+'</td><td>'+esc(r['City'])+'</td>'
+      +'<td>'+esc(r['Assigned Lane']||'—')+'</td>'
+      +'<td>'+esc(r['Assigned To']||'—')+'</td>'
+      +'<td>'+(dist?'<span class="pill green">Distributed</span>':'<span class="pill orange">New</span>')+'</td>'
+      +'<td>'+invPill+'</td>'
+      +'<td><div class="rowbtns">'
+      +'<button class="btn '+(dist?'ghost':'primary')+' sm" data-assign="'+esc(r['Client ID'])+'">'+(dist?'Re-assign':'Assign')+'</button>'
+      +(isDup&&canDel?'<button class="btn ghost sm" style="color:var(--err)" data-dupdelete="'+esc(r['Client ID'])+'">Remove Dup</button>':'')
       +'</div></td></tr>';
   });
   html+='</tbody></table></div></div><div class="count">'+list.length+' of '+rows.length+' shown</div>';
   document.getElementById('view').innerHTML=html;
+
   document.getElementById('addBtn').addEventListener('click',openAdd);
+  document.querySelectorAll('[data-altab]').forEach(b=>b.addEventListener('click',()=>{allLeadsTab=b.dataset.altab;renderAll(sys);}));
   const rfb=document.getElementById('refreshBtn'); if(rfb) rfb.addEventListener('click',refresh);
-  const s=document.getElementById('search'); s.addEventListener('input',()=>{searchText=s.value;renderAll(sys);const el=document.getElementById('search');el.focus();el.setSelectionRange(el.value.length,el.value.length);});
+  const s=document.getElementById('search'); s.addEventListener('input',()=>{searchText=s.value;renderAll(sys);const el=document.getElementById('search');if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length);}});
   document.getElementById('exportBtn').addEventListener('click',()=>exportAll());
   document.querySelectorAll('[data-assign]').forEach(b=>b.addEventListener('click',()=>openAssign(b.dataset.assign)));
   document.querySelectorAll('[data-dupdelete]').forEach(b=>b.addEventListener('click',async()=>{
-    if(!confirm('Mark as duplicate and delete from All Leads + Lead FMS?'))return;
-    toast('Deleting…'); await writeThenRefresh({action:'deleteClient',clientId:b.dataset.dupdelete}); toast('Deleted');
+    const r=DATA.allLeads.find(x=>x['Client ID']===b.dataset.dupdelete)||{};
+    if(!confirm('Duplicate remove karein?\nName: '+r['Name']+'\nPhone: '+r['Contact No.']+'\nYeh All Leads + Lead FMS se delete ho jayega.'))return;
+    toast('Removing…'); await writeThenRefresh({action:'deleteClient',clientId:b.dataset.dupdelete}); toast('Removed');
   }));
 }
 
@@ -707,34 +746,62 @@ function openAssign(clientId){
   };
 }
 
+function investSummaryHtml(r){
+  let inv={};
+  try{ inv=JSON.parse(r['Investment']||'{}'); }catch(e){}
+  const keys=Object.keys(inv).filter(k=>inv[k]&&inv[k]!=='0');
+  if(!keys.length) return '';
+  const total=keys.reduce((s,k)=>s+(parseFloat(String(inv[k]).replace(/[^0-9.]/g,''))||0),0);
+  return '<div style="background:#f0f4ff;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:13px">'
+    +'<b>Investment:</b> '+keys.map(k=>'<span class="pill blue" style="margin-right:4px">'+k+' ₹'+inv[k]+'</span>').join('')
+    +(total?' <b>Total: ₹'+total.toLocaleString('en-IN')+'</b>':'')+'</div>';
+}
+
 function openEdit(sys,clientId){
   const r=rowsFor(sys).find(x=>x['Client ID']===clientId)||{};
+  // For zoom/out: get investment from lead FMS (same lane)
+  let leadRow={};
+  if(sys.type==='zoom'||sys.type==='out'){
+    const laneData=DATA.lanes[sys.lane];
+    if(laneData&&laneData.lead) leadRow=laneData.lead.find(x=>x['Client ID']===clientId)||{};
+  } else { leadRow=r; }
+
   let inner='<h2>Action — '+esc(r['Name']||'')+'</h2><p class="msub">'+esc(sys.label)+'</p>';
+
+  // Investment summary (read-only for zoom/out, from lead data)
+  inner+=investSummaryHtml(leadRow);
+
   inner+='<label>Contact mode</label>'+sel('m_contact',['—','Call Connected','WhatsApp Chat','Not Picked'],'—')
     +'<label>Was the call productive?</label>'+sel('m_productive',['—','Yes','No'],'—');
+
+  // Investment Status dropdown — all stages
+  const invSt=(sys.type==='lead'?r:leadRow)['Investment Status']||'Active';
+  inner+='<label>Investment Status</label>'+sel('m_invStatus',['Active','Monthly','Not Required'],invSt)
+    +'<div class="hintline" id="invStNote"></div>';
+
   if(sys.type==='lead'){
     inner+='<label>Lead Status</label>'+sel('m_status',LEAD_STATUSES,r['Lead Status'])
-      +'<div id="notPickedNote" class="hintline" style="display:none;color:var(--err)">Not Picked: next follow-up = +6 hours, baaki fields lock ho jayenge.</div>'
-      +'<div id="timeZoomNote" class="hintline" style="display:none;color:var(--ok)">Time Given for Zoom: client apne aap Zoom FMS me chala jayega.</div>'
-      +'<div id="onbNote" class="hintline" style="display:none;color:var(--ok)">Onboarding: client seedha Outgoing Onboarding me chala jayega (+24h auto).</div>'
+      +'<div id="notPickedNote" class="hintline" style="display:none;color:var(--err)">Not Picked: next follow-up = +6 hours, baaki fields lock.</div>'
+      +'<div id="timeZoomNote" class="hintline" style="display:none;color:var(--ok)">Time Given for Zoom: client apne aap Zoom FMS me jayega.</div>'
+      +'<div id="onbNote" class="hintline" style="display:none;color:var(--ok)">Onboarding: client seedha Outgoing Onboarding me jayega (+24h auto).</div>'
       +'<div id="extraFields">'
-      +'<label>Next Planned Date <span class="hintline">(Time Given ke liye manual; baaki auto)</span></label><input type="datetime-local" id="m_next" value="'+toDatetimeLocal(r['Next Planned Date'])+'">'
-      +'<label>Done Remark</label><textarea id="m_remarks">'+esc(r['Last Remarks']||'')+'</textarea>'
+      +'<label>Next Planned Date</label><input type="datetime-local" id="m_next" value="'+toDatetimeLocal(r['Next Planned Date'])+'">'
+      +'<label>Full Detailed Remarks <span style="color:var(--err)">*</span></label><textarea id="m_remarks" required>'+esc(r['Last Remarks']||'')+'</textarea>'
       +'<label>Client Co-ordinator</label>'+coordSelect('m_assignedTo','client',r['Assigned To']||'')
       +'<label>Scheduled By</label><input id="m_scheduledBy" value="'+esc(r['Scheduled By']||'')+'">'
       +'</div>';
   } else if(sys.type==='zoom'){
     inner+='<label>Meeting Status</label>'+sel('m_status',ZOOM_STATUSES,r['Meeting Status'])
       +'<label>Next Planned Date</label><input type="datetime-local" id="m_next" value="'+toDatetimeLocal(r['Next Planned Date'])+'">'
-      +'<label>Onboarding Start <span class="hintline">(Yes = client moves to Outgoing Onboarding)</span></label>'+sel('m_onb',['No','Yes'],r['Onboarding Start']||'No')
-      +'<label>Done Remark</label><textarea id="m_remarks">'+esc(r['Last Remarks']||'')+'</textarea>'
+      +'<label>Onboarding Start <span class="hintline">(Yes = Outgoing me jayega)</span></label>'+sel('m_onb',['No','Yes'],r['Onboarding Start']||'No')
+      +'<label>Full Detailed Remarks <span style="color:var(--err)">*</span></label><textarea id="m_remarks" required>'+esc(r['Last Remarks']||'')+'</textarea>'
       +'<label>Client Co-ordinator</label>'+coordSelect('m_assignedTo','client',r['Assigned To']||'')
       +'<label>Scheduled By</label><input id="m_scheduledBy" value="'+esc(r['Scheduled By']||'')+'">';
   } else {
     inner+='<label>Current Status</label>'+sel('m_stageVal',ONBOARDING_STAGES,r['Current Status']||'Documentation')
-      +'<div class="hintline">Saving sets next follow-up to +24 hours automatically.</div>'
+      +'<div class="hintline">Saving sets next follow-up +24h.</div>'
       +'<label>Onboarding Status</label>'+sel('m_onbStatus',['Under Process','Done','Not Required'],r['Onboarding Status']||'Under Process')
-      +'<label>Done Remark</label><textarea id="m_remarks">'+esc(r['Last Remarks']||'')+'</textarea>'
+      +'<label>Full Detailed Remarks <span style="color:var(--err)">*</span></label><textarea id="m_remarks" required>'+esc(r['Last Remarks']||'')+'</textarea>'
       +'<label>Wealth Manager</label>'+coordSelect('m_assignedTo','wealthManager',r['Assigned To']||'')
       +'<label>Upload Document <span class="hintline">'+(r['Document']?'(replace)':'(optional)')+'</span></label><input type="file" id="m_file">'
       +(r['Document']?'<div class="hintline"><a href="'+esc(r['Document'])+'" target="_blank" rel="noopener">View current</a></div>':'');
@@ -743,49 +810,53 @@ function openEdit(sys,clientId){
   modal.innerHTML=inner; overlay.classList.add('show');
   document.getElementById('m_cancel').onclick=closeModal;
 
-  // Lead status change logic
+  // Investment Status note
+  const invSel=document.getElementById('m_invStatus');
+  const invNote=document.getElementById('invStNote');
+  function onInvChange(){ const v=invSel.value; invNote.textContent=v==='Monthly'?'Client Monthly tab me chala jayega.':v==='Not Required'?'Client Not Required tab me chala jayega.':''; invNote.style.color=v==='Active'?'':'var(--accent-d)'; }
+  if(invSel){ invSel.addEventListener('change',onInvChange); onInvChange(); }
+
+  // Lead status lock logic
   if(sys.type==='lead'){
     const stSel=document.getElementById('m_status');
-    const notePick=document.getElementById('notPickedNote');
-    const noteZoom=document.getElementById('timeZoomNote');
-    const noteOnb=document.getElementById('onbNote');
-    const extraFields=document.getElementById('extraFields');
     function onStatusChange(){
       const v=stSel.value;
-      notePick.style.display=(v==='Not Picked')?'block':'none';
-      noteZoom.style.display=(v==='Time Given for Zoom')?'block':'none';
-      noteOnb.style.display=(v==='Onboarding')?'block':'none';
-      extraFields.style.opacity=(v==='Not Picked')?'0.4':'1';
-      extraFields.style.pointerEvents=(v==='Not Picked')?'none':'auto';
+      document.getElementById('notPickedNote').style.display=(v==='Not Picked')?'block':'none';
+      document.getElementById('timeZoomNote').style.display=(v==='Time Given for Zoom')?'block':'none';
+      document.getElementById('onbNote').style.display=(v==='Onboarding')?'block':'none';
+      const ef=document.getElementById('extraFields');
+      ef.style.opacity=(v==='Not Picked')?'0.4':'1';
+      ef.style.pointerEvents=(v==='Not Picked')?'none':'auto';
     }
-    stSel.addEventListener('change',onStatusChange);
-    onStatusChange();
+    stSel.addEventListener('change',onStatusChange); onStatusChange();
   }
 
   document.getElementById('m_save').onclick=async()=>{
+    const remarks=val('m_remarks');
+    if(!remarks){toast('Full Detailed Remarks zaroori hai');return;}
     const body={action:'updateRow',stage:sys.type,lane:sys.lane,clientId:clientId,
-      remarks:val('m_remarks'),nextPlanned:dtLocalToDMY(val('m_next')),assignedTo:val('m_assignedTo')};
+      remarks:remarks,nextPlanned:dtLocalToDMY(val('m_next')),assignedTo:val('m_assignedTo'),
+      investmentStatus:val('m_invStatus')};
     const cm=val('m_contact'), pr=val('m_productive');
     if(cm&&cm!=='—') body.contactMode=cm;
     if(pr&&pr!=='—') body.productive=pr;
     if(sys.type==='lead'){
       body.status=val('m_status'); body.scheduledBy=val('m_scheduledBy');
-      // Auto-move triggers
       if(body.status==='Time Given for Zoom'){
         closeModal(); toast('Sending to Zoom FMS…');
-        await writeThenRefresh({action:'moveToZoom',lane:sys.lane,destLane:sys.lane,clientId:clientId,nextPlanned:''});
+        await writeThenRefresh({action:'moveToZoom',lane:sys.lane,destLane:sys.lane,clientId:clientId,nextPlanned:'',investmentStatus:body.investmentStatus});
         toast('Sent to Zoom FMS '+sys.lane); return;
       }
       if(body.status==='Onboarding'){
         closeModal(); toast('Sending to Outgoing Onboarding…');
-        await writeThenRefresh({action:'moveToOutgoing',lane:sys.lane,destLane:sys.lane,clientId:clientId,nextPlanned:''});
+        await writeThenRefresh({action:'moveToOutgoing',lane:sys.lane,destLane:sys.lane,clientId:clientId,nextPlanned:'',investmentStatus:body.investmentStatus});
         toast('Sent to Outgoing Onboarding '+sys.lane); return;
       }
     }
     if(sys.type==='zoom'){ body.status=val('m_status'); body.scheduledBy=val('m_scheduledBy'); body.onboardingStart=val('m_onb');
       if(body.onboardingStart==='Yes'){
         closeModal(); toast('Sending to Outgoing Onboarding…');
-        await writeThenRefresh({action:'moveToOutgoing',lane:sys.lane,destLane:sys.lane,clientId:clientId,nextPlanned:''});
+        await writeThenRefresh({action:'moveToOutgoing',lane:sys.lane,destLane:sys.lane,clientId:clientId,nextPlanned:'',investmentStatus:body.investmentStatus});
         toast('Sent to Outgoing Onboarding '+sys.lane); return;
       }
     }
@@ -912,4 +983,4 @@ function downloadCsv(cols,rows,name){
 }
 </script>
 </body>
-</html> 
+</html>
