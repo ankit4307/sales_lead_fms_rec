@@ -152,8 +152,9 @@
 // ============================================================
 const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyC9pGBgRNUeVt-JQwELpHyq6Mx0WMQW2BsNXyE31HJItjCIbPYbhCfTDYqJ7M3c_eclw/exec';
 
-const LEAD_STATUSES = ['Time Given for Zoom','Client Not Coming','No Response','Follow up','Not Interested'];
-const ONBOARDING_STAGES = ['Documentation','KYC Done','KYC Not Done','UCC','Mandate','AOF/FATCA','File Upload (Only for Non Individual)','Ready to Invest','SIP','Lumpsum','SWP'];
+const LEAD_STATUSES = ['Time Given for Zoom','Client Not Coming','Not Picked','Next Follow Up','Not Interested','Onboarding'];
+const ONBOARDING_STAGES = ['Documentation','KYC Done','KYC Not Done','UCC','Mandate','AOF/FATCA','File Upload (Only for Non Individual)','Ready to Invest'];
+const INVEST_TYPES = ['SIP','Lumpsum','SWP','STP'];
 const NBD_STATUS = ['HIGH PRIORITY','DONE','NORMAL'];
 const NBD_FINAL  = ['UNDER PROCESS','COMPLETE'];
 const NBD_QUERY  = ['Not Done','Done'];
@@ -177,9 +178,9 @@ function buildSystems(){
     lanes.forEach(n=>SYSTEMS.push({id:'out'+n,label:'Outgoing Onboarding '+n,type:'out',lane:n}));
     SYSTEMS.push({id:'nbd',label:'NBD Query FMS',type:'nbd'});
   } else if(ROLE==='lead'){
+    // Lead employee handles All Leads + Lead FMS N + Zoom FMS N
     SYSTEMS.push({id:'allLeads',label:'All Leads',type:'all'});
     SYSTEMS.push({id:'lead'+LANE,label:'Lead FMS '+LANE,type:'lead',lane:LANE});
-  } else if(ROLE==='zoom'){
     SYSTEMS.push({id:'zoom'+LANE,label:'Zoom FMS '+LANE,type:'zoom',lane:LANE});
   } else if(ROLE==='onboarding'){
     SYSTEMS.push({id:'out'+LANE,label:'Outgoing Onboarding '+LANE,type:'out',lane:LANE});
@@ -309,7 +310,7 @@ function plusDaysDMY(n){ const d=new Date(); d.setDate(d.getDate()+n); return pa
 
 // next planned preview (server is authoritative; this is for instant UI)
 function computeNext(stage,status,manualDMY){
-  if(stage==='lead'){ if(status==='Not Interested')return''; if(status==='Client Not Coming'||status==='No Response')return plusDaysDMY(1); if(status==='Follow up')return plusDaysDMY(2); return manualDMY||''; }
+  if(stage==='lead'){ if(status==='Not Interested')return''; if(status==='Not Picked')return''; if(status==='Client Not Coming')return plusDaysDMY(1); if(status==='Next Follow Up')return plusDaysDMY(2); return manualDMY||''; }
   if(stage==='zoom'){ if(status==='Client Not Attend Meeting'||status==='Client Not Responding')return plusDaysDMY(1); if(status==='Follow up')return plusDaysDMY(2); if(status==='No Meeting Required'||status==='Not Eligible')return''; return manualDMY||''; }
   return manualDMY||'';
 }
@@ -351,7 +352,7 @@ function renderStage(sys){
   let html='';
   let sub = rows.length+' clients in this system';
   if(sys.type==='out'){ const done=rows.filter(r=>r['Onboarding Status']==='Done').length; const nr=rows.filter(r=>r['Onboarding Status']==='Not Required').length; sub=rows.length+' clients &nbsp; <span class="pill orange">'+(rows.length-done-nr)+' Under Process</span> &nbsp; <span class="pill green">'+done+' Done</span>'; }
-  html+='<div class="head"><h1>'+esc(sys.label)+'</h1><span class="sub">'+sub+'</span><span class="spacer"></span></div>';
+  html+='<div class="head"><h1>'+esc(sys.label)+'</h1><span class="sub">'+sub+'</span><span class="spacer"></span><button class="btn primary" id="addLeadBtn">+ Add Lead</button></div>';
   html+='<div class="tabs">'
     +stageTab('','Home',rows.length)
     +stageTab('pastdue','Past Due',c.pastdue)
@@ -390,12 +391,16 @@ function rowHtml(sys,r){
   const id=r['Client ID'];
   const base='<td>'+esc(r['Name'])+'</td><td style="white-space:nowrap">'+esc(r['Contact No.'])+'</td><td>'+esc(r['City'])+'</td>';
   if(sys.type==='lead'){
+    const hasAction=!!(r['Lead Status']);
     return '<tr>'+base
       +'<td>'+(r['Lead Status']?'<span class="pill blue">'+esc(r['Lead Status'])+'</span>':'—')+'</td>'
       +'<td>'+dateCell(r['Next Planned Date'])+'</td>'
       +'<td class="wrap">'+esc(r['Last Remarks']||'—')+'</td>'
       +'<td>'+esc(r['Assigned To']||'—')+'</td><td>'+esc(r['Scheduled By']||'—')+'</td>'
-      +'<td><div class="rowbtns"><button class="btn ghost sm" data-edit="'+esc(id)+'">Action</button><button class="btn primary sm" data-move="'+esc(id)+'">→ Zoom</button></div></td></tr>';
+      +'<td><div class="rowbtns">'
+      +(hasAction?'<button class="btn ghost sm" data-edit="'+esc(id)+'">Action</button>':'')
+      +'<button class="btn ghost sm" data-invest="'+esc(id)+'">Investment</button>'
+      +'</div></td></tr>';
   }
   if(sys.type==='zoom'){
     return '<tr>'+base
@@ -413,7 +418,7 @@ function rowHtml(sys,r){
     +'<td>'+(r['Document']?'<a href="'+esc(r['Document'])+'" target="_blank" rel="noopener">View</a>':'—')+'</td>'
     +'<td class="wrap">'+esc(r['Last Remarks']||'—')+'</td>'
     +'<td>'+esc(r['Assigned To']||'—')+'</td>'
-    +'<td><div class="rowbtns"><button class="btn ghost sm" data-edit="'+esc(id)+'">Action</button><button class="btn dark sm" data-complete="'+esc(id)+'">Complete</button></div></td></tr>';
+    +'<td><div class="rowbtns"><button class="btn ghost sm" data-edit="'+esc(id)+'">Action</button><button class="btn dark sm" data-complete="'+esc(id)+'">Onboarding Complete</button></div></td></tr>';
 }
 function onbPill(v){ v=(v||'Under Process'); if(v==='Done')return'<span class="pill green">Done</span>'; if(v==='Not Required')return'<span class="pill grey">Not Required</span>'; return'<span class="pill orange">Under Process</span>'; }
 
@@ -427,6 +432,7 @@ function filterRows(rows){
 }
 
 function wireStage(sys){
+  const alb=document.getElementById('addLeadBtn'); if(alb) alb.addEventListener('click',openAdd);
   document.querySelectorAll('.tab').forEach(b=>b.addEventListener('click',()=>{bucketFilter=b.dataset.b;render();}));
   const s=document.getElementById('search'); if(s) s.addEventListener('input',()=>{searchText=s.value;render();s2focus();});
   function s2focus(){const el=document.getElementById('search');if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length);}}
@@ -435,6 +441,7 @@ function wireStage(sys){
   document.querySelectorAll('[data-edit]').forEach(b=>b.addEventListener('click',()=>openEdit(sys,b.dataset.edit)));
   document.querySelectorAll('[data-move]').forEach(b=>b.addEventListener('click',()=>moveClient(sys,b.dataset.move)));
   document.querySelectorAll('[data-complete]').forEach(b=>b.addEventListener('click',()=>completeClient(sys,b.dataset.complete)));
+  document.querySelectorAll('[data-invest]').forEach(b=>b.addEventListener('click',()=>openInvestment(sys,b.dataset.invest)));
 }
 
 async function refresh(){ const res=await loadAll(); if(res&&res.success){DATA=res.data;buildSystems();buildNav();render();toast('Refreshed');} }
@@ -586,28 +593,34 @@ function openManageEmployees(){
 
 // ---------- All Leads view ----------
 function renderAll(sys){
-  const rows=DATA.allLeads;
+  const rows=[...(DATA.allLeads||[])].sort((a,b)=>{const x=toDate(a['Created On']),y=toDate(b['Created On']);return (y?y.getTime():0)-(x?x.getTime():0);});
+  const canDel=(ROLE==='admin'||ROLE==='lead');
   let html='';
   html+='<div class="head"><h1>All Leads</h1><span class="sub">'+rows.length+' total</span><span class="spacer"></span><button class="btn primary" id="addBtn">+ Add Lead</button></div>';
   html+='<div class="toolbar"><input type="text" id="search" placeholder="Search name, email, phone, city…" value="'+esc(searchText)+'"><button class="btn ghost sm" id="refreshBtn">↻ Refresh</button><button class="btn dark sm" id="exportBtn">Export CSV</button></div>';
   const q=searchText.trim().toLowerCase();
   const list=rows.filter(r=>!q||[r['Name'],r['Email'],r['Contact No.'],r['City']].join(' ').toLowerCase().includes(q));
-  const cols=['Created On','Source','Name','Contact','Email','City','Lane','Client Coordinator','Status','Actions'];
+  const cols=['Created On','Source','Name','Contact','Email','City','Lane','Client Co-ordinator','Status','Actions'];
   html+='<div class="tablecard"><div class="scroll"><table><thead><tr>'+cols.map(c=>'<th>'+c+'</th>').join('')+'</tr></thead><tbody>';
   if(!list.length) html+='<tr><td colspan="'+cols.length+'" class="empty">No leads yet.</td></tr>';
   else list.forEach(r=>{
     const dist=r['Status']==='Distributed';
     html+='<tr><td style="white-space:nowrap">'+esc(fmtDT(r['Created On']))+'</td><td><span class="pill '+(r['Source']==='Self'?'blue':'grey')+'">'+esc(r['Source']||'—')+'</span></td><td>'+esc(r['Name'])+'</td><td style="white-space:nowrap">'+esc(r['Contact No.'])+'</td><td>'+esc(r['Email'])+'</td><td>'+esc(r['City'])+'</td><td>'+esc(r['Assigned Lane']||'—')+'</td><td>'+esc(r['Assigned To']||'—')+'</td><td>'+(dist?'<span class="pill green">Distributed</span>':'<span class="pill orange">New</span>')+'</td>'
-      +'<td><button class="btn '+(dist?'ghost':'primary')+' sm" data-assign="'+esc(r['Client ID'])+'">'+(dist?'Re-assign':'Assign')+'</button></td></tr>';
+      +'<td><div class="rowbtns"><button class="btn '+(dist?'ghost':'primary')+' sm" data-assign="'+esc(r['Client ID'])+'">'+(dist?'Re-assign':'Assign')+'</button>'
+      +(canDel?'<button class="btn ghost sm" style="color:var(--err)" data-dupdelete="'+esc(r['Client ID'])+'">Duplicate</button>':'')
+      +'</div></td></tr>';
   });
   html+='</tbody></table></div></div><div class="count">'+list.length+' of '+rows.length+' shown</div>';
   document.getElementById('view').innerHTML=html;
-
   document.getElementById('addBtn').addEventListener('click',openAdd);
   const rfb=document.getElementById('refreshBtn'); if(rfb) rfb.addEventListener('click',refresh);
   const s=document.getElementById('search'); s.addEventListener('input',()=>{searchText=s.value;renderAll(sys);const el=document.getElementById('search');el.focus();el.setSelectionRange(el.value.length,el.value.length);});
   document.getElementById('exportBtn').addEventListener('click',()=>exportAll());
   document.querySelectorAll('[data-assign]').forEach(b=>b.addEventListener('click',()=>openAssign(b.dataset.assign)));
+  document.querySelectorAll('[data-dupdelete]').forEach(b=>b.addEventListener('click',async()=>{
+    if(!confirm('Mark as duplicate and delete from All Leads + Lead FMS?'))return;
+    toast('Deleting…'); await writeThenRefresh({action:'deleteClient',clientId:b.dataset.dupdelete}); toast('Deleted');
+  }));
 }
 
 // ---------- Modals ----------
@@ -634,11 +647,55 @@ function openAdd(){
   };
 }
 
+function openInvestment(sys,clientId){
+  const r=rowsFor(sys).find(x=>x['Client ID']===clientId)||{};
+  let inv={};
+  try{ inv=JSON.parse(r['Investment']||'{}'); }catch(e){ inv={}; }
+  let inner='<h2>Investment — '+esc(r['Name']||'')+'</h2><p class="msub">Tick jo bhi client ne kiya ho, amount fill karo.</p>';
+  INVEST_TYPES.forEach(t=>{
+    const checked=!!(inv[t]); const amt=inv[t]||'';
+    inner+='<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:0.5px solid var(--line)">'
+      +'<input type="checkbox" id="inv_chk_'+t+'" '+(checked?'checked':'')+' style="width:16px;height:16px;accent-color:var(--accent)">'
+      +'<label for="inv_chk_'+t+'" style="flex:1;font-weight:600;font-size:14px;margin:0">'+t+'</label>'
+      +'<div id="inv_amt_wrap_'+t+'" style="'+(checked?'':'display:none')+'"><input id="inv_amt_'+t+'" value="'+esc(amt)+'" placeholder="Amount ₹" style="width:130px;text-align:right"></div>'
+      +'</div>';
+  });
+  // Summary
+  inner+='<div id="invSummary" style="margin-top:10px;font-size:13px;color:var(--ink-soft)"></div>';
+  inner+='<div class="actions"><button class="btn ghost" id="m_cancel">Cancel</button><button class="btn primary" id="m_save">Save</button></div>';
+  modal.innerHTML=inner; overlay.classList.add('show');
+  document.getElementById('m_cancel').onclick=closeModal;
+  function updateSummary(){
+    let s=''; let total=0;
+    INVEST_TYPES.forEach(t=>{
+      const chk=document.getElementById('inv_chk_'+t);
+      const amt=document.getElementById('inv_amt_'+t);
+      if(chk&&chk.checked&&amt&&amt.value.trim()){ const v=parseFloat(amt.value.replace(/[^0-9.]/g,'')); if(!isNaN(v)){total+=v; s+='<span class="pill blue" style="margin-right:4px">'+t+' ₹'+v.toLocaleString('en-IN')+'</span>';} }
+    });
+    const sum=document.getElementById('invSummary');
+    if(sum) sum.innerHTML=total?'Total: <b>₹'+total.toLocaleString('en-IN')+'</b> &nbsp; '+s:'';
+  }
+  INVEST_TYPES.forEach(t=>{
+    const chk=document.getElementById('inv_chk_'+t);
+    const wrap=document.getElementById('inv_amt_wrap_'+t);
+    if(chk) chk.addEventListener('change',()=>{ wrap.style.display=chk.checked?'':'none'; updateSummary(); });
+    const amt=document.getElementById('inv_amt_'+t); if(amt) amt.addEventListener('input',updateSummary);
+  });
+  updateSummary();
+  document.getElementById('m_save').onclick=async()=>{
+    const inv={};
+    INVEST_TYPES.forEach(t=>{ const chk=document.getElementById('inv_chk_'+t); const amt=document.getElementById('inv_amt_'+t); if(chk&&chk.checked&&amt) inv[t]=amt.value.trim()||'0'; });
+    closeModal(); toast('Saving…');
+    await writeThenRefresh({action:'updateRow',stage:sys.type,lane:sys.lane,clientId:clientId,investment:JSON.stringify(inv)});
+    toast('Investment saved');
+  };
+}
+
 function openAssign(clientId){
   const r=DATA.allLeads.find(x=>x['Client ID']===clientId)||{};
   modal.innerHTML='<h2>Send to Lead FMS</h2><p class="msub">'+esc(r['Name']||'')+' — choose which Lead FMS to send to.</p>'
     +'<label>Send to</label>'+laneSelect('m_lane','Lead FMS','')
-    +'<label>Client Coordinator</label>'+coordSelect('m_assignedTo','client',r['Assigned To']||'')
+    +'<label>Client Co-ordinator</label>'+coordSelect('m_assignedTo','client',r['Assigned To']||'')
     +'<div class="actions"><button class="btn ghost" id="m_cancel">Cancel</button><button class="btn primary" id="m_save">Send</button></div>';
   overlay.classList.add('show');
   document.getElementById('m_cancel').onclick=closeModal;
@@ -657,38 +714,81 @@ function openEdit(sys,clientId){
     +'<label>Was the call productive?</label>'+sel('m_productive',['—','Yes','No'],'—');
   if(sys.type==='lead'){
     inner+='<label>Lead Status</label>'+sel('m_status',LEAD_STATUSES,r['Lead Status'])
-      +'<label>Next Planned Date <span class="hintline">(used for "Time Given"; auto for others)</span></label><input type="datetime-local" id="m_next" value="'+toDatetimeLocal(r['Next Planned Date'])+'">'
+      +'<div id="notPickedNote" class="hintline" style="display:none;color:var(--err)">Not Picked: next follow-up = +6 hours, baaki fields lock ho jayenge.</div>'
+      +'<div id="timeZoomNote" class="hintline" style="display:none;color:var(--ok)">Time Given for Zoom: client apne aap Zoom FMS me chala jayega.</div>'
+      +'<div id="onbNote" class="hintline" style="display:none;color:var(--ok)">Onboarding: client seedha Outgoing Onboarding me chala jayega (+24h auto).</div>'
+      +'<div id="extraFields">'
+      +'<label>Next Planned Date <span class="hintline">(Time Given ke liye manual; baaki auto)</span></label><input type="datetime-local" id="m_next" value="'+toDatetimeLocal(r['Next Planned Date'])+'">'
       +'<label>Done Remark</label><textarea id="m_remarks">'+esc(r['Last Remarks']||'')+'</textarea>'
-      +'<label>Meeting Co-ordinator</label>'+coordSelect('m_assignedTo','meeting',r['Assigned To']||'')
-      +'<label>Scheduled By</label><input id="m_scheduledBy" value="'+esc(r['Scheduled By']||'')+'">';
+      +'<label>Client Co-ordinator</label>'+coordSelect('m_assignedTo','client',r['Assigned To']||'')
+      +'<label>Scheduled By</label><input id="m_scheduledBy" value="'+esc(r['Scheduled By']||'')+'">'
+      +'</div>';
   } else if(sys.type==='zoom'){
     inner+='<label>Meeting Status</label>'+sel('m_status',ZOOM_STATUSES,r['Meeting Status'])
-      +'<label>Next Planned Date <span class="hintline">(auto for Not Attend/Responding/Follow up; blank for No Meeting/Not Eligible)</span></label><input type="datetime-local" id="m_next" value="'+toDatetimeLocal(r['Next Planned Date'])+'">'
-      +'<label>Onboarding Start</label>'+sel('m_onb',['No','Yes'],r['Onboarding Start']||'No')
-      +'<div class="hintline">Onboarding Start = Yes → client moves to Outgoing Onboarding.</div>'
+      +'<label>Next Planned Date</label><input type="datetime-local" id="m_next" value="'+toDatetimeLocal(r['Next Planned Date'])+'">'
+      +'<label>Onboarding Start <span class="hintline">(Yes = client moves to Outgoing Onboarding)</span></label>'+sel('m_onb',['No','Yes'],r['Onboarding Start']||'No')
       +'<label>Done Remark</label><textarea id="m_remarks">'+esc(r['Last Remarks']||'')+'</textarea>'
-      +'<label>Onboarding Coordinator</label>'+coordSelect('m_assignedTo','onboarding',r['Assigned To']||'')
+      +'<label>Client Co-ordinator</label>'+coordSelect('m_assignedTo','client',r['Assigned To']||'')
       +'<label>Scheduled By</label><input id="m_scheduledBy" value="'+esc(r['Scheduled By']||'')+'">';
   } else {
     inner+='<label>Current Status</label>'+sel('m_stageVal',ONBOARDING_STAGES,r['Current Status']||'Documentation')
-      +'<div class="hintline">Saving sets the next follow-up to +24 hours automatically.</div>'
+      +'<div class="hintline">Saving sets next follow-up to +24 hours automatically.</div>'
       +'<label>Onboarding Status</label>'+sel('m_onbStatus',['Under Process','Done','Not Required'],r['Onboarding Status']||'Under Process')
       +'<label>Done Remark</label><textarea id="m_remarks">'+esc(r['Last Remarks']||'')+'</textarea>'
-      +'<label>Onboarding Coordinator</label>'+coordSelect('m_assignedTo','onboarding',r['Assigned To']||'')
-      +'<label>Upload Document <span class="hintline">'+(r['Document']?'(already uploaded — choose a new file to replace)':'(optional)')+'</span></label><input type="file" id="m_file">'
-      +(r['Document']?'<div class="hintline"><a href="'+esc(r['Document'])+'" target="_blank" rel="noopener">View current document</a></div>':'');
+      +'<label>Wealth Manager</label>'+coordSelect('m_assignedTo','wealthManager',r['Assigned To']||'')
+      +'<label>Upload Document <span class="hintline">'+(r['Document']?'(replace)':'(optional)')+'</span></label><input type="file" id="m_file">'
+      +(r['Document']?'<div class="hintline"><a href="'+esc(r['Document'])+'" target="_blank" rel="noopener">View current</a></div>':'');
   }
   inner+='<div class="actions"><button class="btn ghost" id="m_cancel">Cancel</button><button class="btn primary" id="m_save">Save Done</button></div>';
   modal.innerHTML=inner; overlay.classList.add('show');
   document.getElementById('m_cancel').onclick=closeModal;
+
+  // Lead status change logic
+  if(sys.type==='lead'){
+    const stSel=document.getElementById('m_status');
+    const notePick=document.getElementById('notPickedNote');
+    const noteZoom=document.getElementById('timeZoomNote');
+    const noteOnb=document.getElementById('onbNote');
+    const extraFields=document.getElementById('extraFields');
+    function onStatusChange(){
+      const v=stSel.value;
+      notePick.style.display=(v==='Not Picked')?'block':'none';
+      noteZoom.style.display=(v==='Time Given for Zoom')?'block':'none';
+      noteOnb.style.display=(v==='Onboarding')?'block':'none';
+      extraFields.style.opacity=(v==='Not Picked')?'0.4':'1';
+      extraFields.style.pointerEvents=(v==='Not Picked')?'none':'auto';
+    }
+    stSel.addEventListener('change',onStatusChange);
+    onStatusChange();
+  }
+
   document.getElementById('m_save').onclick=async()=>{
     const body={action:'updateRow',stage:sys.type,lane:sys.lane,clientId:clientId,
       remarks:val('m_remarks'),nextPlanned:dtLocalToDMY(val('m_next')),assignedTo:val('m_assignedTo')};
     const cm=val('m_contact'), pr=val('m_productive');
     if(cm&&cm!=='—') body.contactMode=cm;
     if(pr&&pr!=='—') body.productive=pr;
-    if(sys.type==='lead'){ body.status=val('m_status'); body.scheduledBy=val('m_scheduledBy'); }
-    if(sys.type==='zoom'){ body.status=val('m_status'); body.scheduledBy=val('m_scheduledBy'); body.onboardingStart=val('m_onb'); }
+    if(sys.type==='lead'){
+      body.status=val('m_status'); body.scheduledBy=val('m_scheduledBy');
+      // Auto-move triggers
+      if(body.status==='Time Given for Zoom'){
+        closeModal(); toast('Sending to Zoom FMS…');
+        await writeThenRefresh({action:'moveToZoom',lane:sys.lane,destLane:sys.lane,clientId:clientId,nextPlanned:''});
+        toast('Sent to Zoom FMS '+sys.lane); return;
+      }
+      if(body.status==='Onboarding'){
+        closeModal(); toast('Sending to Outgoing Onboarding…');
+        await writeThenRefresh({action:'moveToOutgoing',lane:sys.lane,destLane:sys.lane,clientId:clientId,nextPlanned:''});
+        toast('Sent to Outgoing Onboarding '+sys.lane); return;
+      }
+    }
+    if(sys.type==='zoom'){ body.status=val('m_status'); body.scheduledBy=val('m_scheduledBy'); body.onboardingStart=val('m_onb');
+      if(body.onboardingStart==='Yes'){
+        closeModal(); toast('Sending to Outgoing Onboarding…');
+        await writeThenRefresh({action:'moveToOutgoing',lane:sys.lane,destLane:sys.lane,clientId:clientId,nextPlanned:''});
+        toast('Sent to Outgoing Onboarding '+sys.lane); return;
+      }
+    }
     if(sys.type==='out'){ body.onboardingStatus=val('m_onbStatus'); body.stageVal=val('m_stageVal'); }
     let pendingFile=null;
     if(sys.type==='out'){ const fi=document.getElementById('m_file'); pendingFile=(fi&&fi.files&&fi.files[0])?fi.files[0]:null; }
@@ -741,12 +841,12 @@ async function completeClient(sys,clientId){
 function val(id){ const el=document.getElementById(id); return el?el.value.trim():''; }
 function sel(id,opts,cur){ return '<select id="'+id+'">'+opts.map(o=>'<option'+(o===cur?' selected':'')+'>'+esc(o)+'</option>').join('')+'</select>'; }
 function laneSelect(id,label,cur){ const lanes=DATA.laneList||[1,2,3]; return '<select id="'+id+'">'+lanes.map(n=>'<option value="'+n+'"'+(String(cur)===String(n)?' selected':'')+'>'+label+' '+n+'</option>').join('')+'</select>'; }
-function coordSelect(id,kind,cur){ const c=DATA.coordinators||{}; const list=(c[kind]||[]); let opts='<option value="">— Select —</option>'+list.map(n=>'<option'+(String(cur)===String(n)?' selected':'')+'>'+esc(n)+'</option>').join(''); if(cur&&list.indexOf(cur)<0) opts+='<option selected>'+esc(cur)+'</option>'; return '<select id="'+id+'">'+opts+'</select>'; }
+function coordSelect(id,kind,cur){ const c=DATA.coordinators||{}; const list=(c[kind]||c['client']||[]); let opts='<option value="">— Select —</option>'+list.map(n=>'<option'+(String(cur)===String(n)?' selected':'')+'>'+esc(n)+'</option>').join(''); if(cur&&list.indexOf(cur)<0&&cur!=='') opts+='<option selected>'+esc(cur)+'</option>'; return '<select id="'+id+'">'+opts+'</select>'; }
 
 function openManageUsers(){
   const users=(DATA.users||[]);
   const lanes=DATA.laneList||[1,2,3];
-  const roleOpts=['admin','lead','zoom','onboarding'];
+  const roleOpts=['admin','lead','onboarding'];
   let inner='<h2>Manage Users</h2><p class="msub">Each employee logs in with their own password and sees only their system. Admin sees everything.</p>';
   inner+='<div id="userList">'+(users.length?users.map(u=>(
     '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid var(--line)">'
@@ -812,4 +912,4 @@ function downloadCsv(cols,rows,name){
 }
 </script>
 </body>
-</html>
+</html> 
