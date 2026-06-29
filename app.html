@@ -366,9 +366,9 @@ function renderStage(sys){
 
   // table head per stage
   let cols;
-  if(sys.type==='lead') cols=['Name','Contact','City','Status','Next Planned','Investment','Inv. Status','Last Remarks','Co-ord.','Scheduled By','Actions'];
-  else if(sys.type==='zoom') cols=['Name','Contact','City','Meeting Status','Next Planned','Investment','Inv. Status','Onboarding','Last Remarks','Co-ord.','Actions'];
-  else cols=['Name','Contact','City','Current Status','Onboarding','Next Planned','Investment','Inv. Status','Doc','Last Remarks','Co-ord.','Actions'];
+  if(sys.type==='lead') cols=['Name','Contact','City','Status','Next Planned','Investment','Inv. Status','Lead FMS Joined','Last Remarks','Co-ord.','Scheduled By','Actions'];
+  else if(sys.type==='zoom') cols=['Name','Contact','City','Meeting Status','Next Planned','Investment','Inv. Status','Zoom Joined','Onboarding','Last Remarks','Co-ord.','Actions'];
+  else cols=['Name','Contact','City','Current Status','Onboarding','Next Planned','Investment','Inv. Status','Onboarding Joined','Completed On','Doc','Last Remarks','Co-ord.','Actions'];
 
   html+='<div class="tablecard"><div class="scroll"><table><thead><tr>'+cols.map(c=>'<th>'+c+'</th>').join('')+'</tr></thead><tbody>';
   if(!list.length){ html+='<tr><td colspan="'+cols.length+'" class="empty">No clients here.</td></tr>'; }
@@ -416,8 +416,8 @@ function rowHtml(sys,r){
     return '<tr>'+base
       +'<td>'+(r['Lead Status']?'<span class="pill blue">'+esc(r['Lead Status'])+'</span>':'—')+'</td>'
       +'<td>'+dateCell(r['Next Planned Date'])+'</td>'
-      +investCell(r)
-      +invStatusCell(r)
+      +investCell(r)+invStatusCell(r)
+      +'<td style="white-space:nowrap;font-size:12px;color:var(--ink-soft)">'+esc(fmtDT(r['Lead FMS Joined On'])||'—')+'</td>'
       +'<td class="wrap">'+esc(r['Last Remarks']||'—')+'</td>'
       +'<td>'+esc(r['Assigned To']||'—')+'</td><td>'+esc(r['Scheduled By']||'—')+'</td>'
       +'<td><div class="rowbtns">'
@@ -429,8 +429,8 @@ function rowHtml(sys,r){
     return '<tr>'+base
       +'<td>'+(r['Meeting Status']?'<span class="pill blue">'+esc(r['Meeting Status'])+'</span>':'—')+'</td>'
       +'<td>'+dateCell(r['Next Planned Date'])+'</td>'
-      +investCell(invRow)
-      +invStatusCell(invRow)
+      +investCell(invRow)+invStatusCell(invRow)
+      +'<td style="white-space:nowrap;font-size:12px;color:var(--ink-soft)">'+esc(fmtDT(r['Zoom FMS Joined On'])||'—')+'</td>'
       +'<td>'+meetPill(r['Onboarding Start'])+'</td>'
       +'<td class="wrap">'+esc(r['Last Remarks']||'—')+'</td>'
       +'<td>'+esc(r['Assigned To']||'—')+'</td>'
@@ -440,8 +440,9 @@ function rowHtml(sys,r){
     +'<td>'+(r['Current Status']?'<span class="pill blue">'+esc(r['Current Status'])+'</span>':'—')+'</td>'
     +'<td>'+onbPill(r['Onboarding Status'])+'</td>'
     +'<td>'+dateCell(r['Next Planned Date'])+'</td>'
-    +investCell(invRow)
-    +invStatusCell(invRow)
+    +investCell(invRow)+invStatusCell(invRow)
+    +'<td style="white-space:nowrap;font-size:12px;color:var(--ink-soft)">'+esc(fmtDT(r['Onboarding Joined On'])||'—')+'</td>'
+    +'<td style="white-space:nowrap;font-size:12px;color:var(--ink-soft)">'+(r['Onboarding Completed On']?esc(fmtDT(r['Onboarding Completed On'])):'—')+'</td>'
     +'<td>'+(r['Document']?'<a href="'+esc(r['Document'])+'" target="_blank" rel="noopener">View</a>':'—')+'</td>'
     +'<td class="wrap">'+esc(r['Last Remarks']||'—')+'</td>'
     +'<td>'+esc(r['Assigned To']||'—')+'</td>'
