@@ -366,9 +366,9 @@ function renderStage(sys){
 
   // table head per stage
   let cols;
-  if(sys.type==='lead') cols=['Name','Contact','City','Status','Next Planned','Investment','Last Remarks','Co-ord.','Scheduled By','Actions'];
-  else if(sys.type==='zoom') cols=['Name','Contact','City','Meeting Status','Next Planned','Investment','Onboarding','Last Remarks','Co-ord.','Actions'];
-  else cols=['Name','Contact','City','Current Status','Onboarding','Next Planned','Investment','Doc','Last Remarks','Co-ord.','Actions'];
+  if(sys.type==='lead') cols=['Name','Contact','City','Status','Next Planned','Investment','Inv. Status','Last Remarks','Co-ord.','Scheduled By','Actions'];
+  else if(sys.type==='zoom') cols=['Name','Contact','City','Meeting Status','Next Planned','Investment','Inv. Status','Onboarding','Last Remarks','Co-ord.','Actions'];
+  else cols=['Name','Contact','City','Current Status','Onboarding','Next Planned','Investment','Inv. Status','Doc','Last Remarks','Co-ord.','Actions'];
 
   html+='<div class="tablecard"><div class="scroll"><table><thead><tr>'+cols.map(c=>'<th>'+c+'</th>').join('')+'</tr></thead><tbody>';
   if(!list.length){ html+='<tr><td colspan="'+cols.length+'" class="empty">No clients here.</td></tr>'; }
@@ -396,10 +396,17 @@ function investCell(r){
   return '<td style="white-space:nowrap"><span title="'+keys.map(k=>k+': ₹'+inv[k]).join(', ')+'">₹'+total.toLocaleString('en-IN')+'<br><span style="font-size:11px;color:var(--ink-soft)">'+keys.join(', ')+'</span></span></td>';
 }
 
+function invStatusCell(r){
+  const v=r['Investment Status']||'';
+  if(v==='Monthly') return '<td><span class="pill blue">Monthly</span></td>';
+  if(v==='Not Required') return '<td><span class="pill grey">Not Required</span></td>';
+  if(v==='Active') return '<td><span class="pill green">Active</span></td>';
+  return '<td>—</td>';
+}
+
 function rowHtml(sys,r){
   const id=r['Client ID'];
   const base='<td>'+esc(r['Name'])+'</td><td style="white-space:nowrap">'+esc(r['Contact No.'])+'</td><td>'+esc(r['City'])+'</td>';
-  // For zoom/out: get investment from lead data of same lane
   let invRow=r;
   if(sys.type==='zoom'||sys.type==='out'){
     const ld=DATA.lanes[sys.lane]; if(ld&&ld.lead) invRow=ld.lead.find(x=>x['Client ID']===id)||r;
@@ -410,6 +417,7 @@ function rowHtml(sys,r){
       +'<td>'+(r['Lead Status']?'<span class="pill blue">'+esc(r['Lead Status'])+'</span>':'—')+'</td>'
       +'<td>'+dateCell(r['Next Planned Date'])+'</td>'
       +investCell(r)
+      +invStatusCell(r)
       +'<td class="wrap">'+esc(r['Last Remarks']||'—')+'</td>'
       +'<td>'+esc(r['Assigned To']||'—')+'</td><td>'+esc(r['Scheduled By']||'—')+'</td>'
       +'<td><div class="rowbtns">'
@@ -422,6 +430,7 @@ function rowHtml(sys,r){
       +'<td>'+(r['Meeting Status']?'<span class="pill blue">'+esc(r['Meeting Status'])+'</span>':'—')+'</td>'
       +'<td>'+dateCell(r['Next Planned Date'])+'</td>'
       +investCell(invRow)
+      +invStatusCell(invRow)
       +'<td>'+meetPill(r['Onboarding Start'])+'</td>'
       +'<td class="wrap">'+esc(r['Last Remarks']||'—')+'</td>'
       +'<td>'+esc(r['Assigned To']||'—')+'</td>'
@@ -432,6 +441,7 @@ function rowHtml(sys,r){
     +'<td>'+onbPill(r['Onboarding Status'])+'</td>'
     +'<td>'+dateCell(r['Next Planned Date'])+'</td>'
     +investCell(invRow)
+    +invStatusCell(invRow)
     +'<td>'+(r['Document']?'<a href="'+esc(r['Document'])+'" target="_blank" rel="noopener">View</a>':'—')+'</td>'
     +'<td class="wrap">'+esc(r['Last Remarks']||'—')+'</td>'
     +'<td>'+esc(r['Assigned To']||'—')+'</td>'
