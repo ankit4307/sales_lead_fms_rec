@@ -336,11 +336,11 @@ function render(){
   else renderStage(sys);
 }
 
-// active rows: lead/zoom me jo "Moved" ho gaye unhe active list me mat dikhao
+// active rows: zoom me "Moved" (Outgoing me chala gaya) hide karo; lead me "Moved" bhi dikhao taaki Zoom Meeting button access ho
 function isMoved(r){ return /^Moved/.test(String(r['Record Status']||'')); }
 function activeRows(sys){
   const rows=rowsFor(sys);
-  if(sys.type==='lead'||sys.type==='zoom') return rows.filter(r=>!isMoved(r));
+  if(sys.type==='zoom') return rows.filter(r=>!isMoved(r));
   return rows;
 }
 
@@ -373,7 +373,7 @@ function renderStage(sys){
   let cols;
   if(sys.type==='lead') cols=['Lead FMS Joined','Name','Contact','City','Status','Next Planned','Investment','Inv. Status','Last Remarks','Co-ord.','Actions'];
   else if(sys.type==='zoom') cols=['Zoom Joined','Name','Contact','City','Meeting Status','Next Planned','Investment','Inv. Status','Onboarding','Last Remarks','Co-ord.','Actions'];
-  else cols=['Onboarding Joined','Completed On','Name','Contact','City','Current Status','Onboarding','Next Planned','Investment','Inv. Status','Doc','Last Remarks','Co-ord.','Actions'];
+  else cols=['Onboarding Joined','Completed On','Name','Contact','City','Current Status','Onboarding','Next Planned','Investment','Inv. Status','Doc','Last Remarks','Wealth Mgr','Actions'];
 
   html+='<div class="tablecard"><div class="scroll"><table><thead><tr>'+cols.map(c=>'<th>'+c+'</th>').join('')+'</tr></thead><tbody>';
   if(!list.length){ html+='<tr><td colspan="'+cols.length+'" class="empty">No clients here.</td></tr>'; }
@@ -417,14 +417,17 @@ function rowHtml(sys,r){
     const ld=DATA.lanes[sys.lane]; if(ld&&ld.lead) invRow=ld.lead.find(x=>x['Client ID']===id)||r;
   }
   if(sys.type==='lead'){
-    const hasAction=!!(r['Lead Status']);
-    const zoomSys={type:'zoom',lane:sys.lane,label:'Zoom FMS '+sys.lane};
+    const moved=isMoved(r);
+    const movedToOut=/Outgoing/.test(String(r['Record Status']||''));
+    const hasAction=!!(r['Lead Status'])&&!moved;
     const zRow=(DATA.lanes[sys.lane]&&DATA.lanes[sys.lane].zoom)?DATA.lanes[sys.lane].zoom.find(x=>x['Client ID']===id):null;
-    const inZoom=!!zRow;
+    const oRow=(DATA.lanes[sys.lane]&&DATA.lanes[sys.lane].out)?DATA.lanes[sys.lane].out.find(x=>x['Client ID']===id):null;
+    const inZoom=!!zRow, inOut=!!oRow;
+    const statusCell=movedToOut?'<span class="pill green">Moved → Onboarding</span>':moved?'<span class="pill green">Moved → Zoom</span>':(r['Lead Status']?'<span class="pill blue">'+esc(r['Lead Status'])+'</span>':'—');
     return '<tr>'
       +'<td style="white-space:nowrap;font-size:12px;color:var(--ink-soft)">'+esc(fmtDT(r['Lead FMS Joined On'])||'—')+'</td>'
       +base
-      +'<td>'+(r['Lead Status']?'<span class="pill blue">'+esc(r['Lead Status'])+'</span>':'—')+'</td>'
+      +'<td>'+statusCell+'</td>'
       +'<td>'+dateCell(r['Next Planned Date'])+'</td>'
       +investCell(r)+invStatusCell(r)
       +'<td class="wrap">'+esc(r['Last Remarks']||'—')+'</td>'
@@ -432,7 +435,8 @@ function rowHtml(sys,r){
       +'<td><div class="rowbtns">'
       +(hasAction?'<button class="btn ghost sm" data-edit="'+esc(id)+'">Action</button>':'')
       +(inZoom?'<button class="btn primary sm" data-zoomedit="'+esc(id)+'" data-zoomlane="'+sys.lane+'">Zoom Meeting</button>':'')
-      +'<button class="btn ghost sm" data-invest="'+esc(id)+'">Investment</button>'
+      +(inOut?'<button class="btn primary sm" data-outedit="'+esc(id)+'" data-outlane="'+sys.lane+'">Onboarding</button>':'')
+      +(moved?'':'<button class="btn ghost sm" data-invest="'+esc(id)+'">Investment</button>')
       +'</div></td></tr>';
   }
   if(sys.type==='zoom'){
@@ -480,6 +484,7 @@ function wireStage(sys){
   const ex=document.getElementById('exportBtn'); if(ex) ex.addEventListener('click',()=>exportCsv(sys));
   document.querySelectorAll('[data-edit]').forEach(b=>b.addEventListener('click',()=>openEdit(sys,b.dataset.edit)));
   document.querySelectorAll('[data-zoomedit]').forEach(b=>b.addEventListener('click',()=>openEdit({type:'zoom',lane:b.dataset.zoomlane,label:'Zoom FMS '+b.dataset.zoomlane},b.dataset.zoomedit)));
+  document.querySelectorAll('[data-outedit]').forEach(b=>b.addEventListener('click',()=>openEdit({type:'out',lane:b.dataset.outlane,label:'Outgoing Onboarding '+b.dataset.outlane},b.dataset.outedit)));
   document.querySelectorAll('[data-move]').forEach(b=>b.addEventListener('click',()=>moveClient(sys,b.dataset.move)));
   document.querySelectorAll('[data-complete]').forEach(b=>b.addEventListener('click',()=>completeClient(sys,b.dataset.complete)));
   document.querySelectorAll('[data-invest]').forEach(b=>b.addEventListener('click',()=>openInvestment(sys,b.dataset.invest)));
@@ -661,7 +666,7 @@ function renderAll(sys){
     +'<button class="tab '+(allLeadsTab==='Not Required'?'on':'')+'" data-altab="Not Required">Not Required <span class="cnt">'+nrCnt+'</span></button>'
     +'</div>';
 
-  html+='<div class="toolbar"><input type="text" id="search" placeholder="Search name, email, phone, city…" value="'+esc(searchText)+'"><button class="btn ghost sm" id="refreshBtn">↻ Refresh</button><button class="btn dark sm" id="exportBtn">Export CSV</button></div>';
+  html+='<div class="toolbar"><input type="text" id="search" placeholder="Search name, email, phone, city…" value="'+esc(searchText)+'"><button class="btn ghost sm" id="refreshBtn">↻ Refresh</button><input type="file" id="importFile" accept=".csv" style="display:none"><button class="btn primary sm" id="importBtn">⬆ Import CSV</button><button class="btn dark sm" id="exportBtn">Export CSV</button></div>';
   const q=searchText.trim().toLowerCase();
   const list=rows.filter(r=>!q||[r['Name'],r['Email'],r['Contact No.'],r['City']].join(' ').toLowerCase().includes(q));
   const cols=['Created On','Source','Name','Contact','Email','City','Lane','Client Co-ordinator','Status','Inv. Status','Actions'];
@@ -695,6 +700,7 @@ function renderAll(sys){
   const rfb=document.getElementById('refreshBtn'); if(rfb) rfb.addEventListener('click',refresh);
   const s=document.getElementById('search'); s.addEventListener('input',()=>{searchText=s.value;renderAll(sys);const el=document.getElementById('search');if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length);}});
   document.getElementById('exportBtn').addEventListener('click',()=>exportAll());
+  document.getElementById('importBtn').addEventListener('click',()=>openImportGuide());
   document.querySelectorAll('[data-assign]').forEach(b=>b.addEventListener('click',()=>openAssign(b.dataset.assign)));
   document.querySelectorAll('[data-dupdelete]').forEach(b=>b.addEventListener('click',async()=>{
     const r=DATA.allLeads.find(x=>x['Client ID']===b.dataset.dupdelete)||{};
@@ -1063,6 +1069,55 @@ function exportCsv(sys){
   downloadCsv(cols,rows,sys.id);
 }
 function exportAll(){ const cols=['Client ID','Created On','Source','Name','Contact No.','Email','City','Assigned Lane','Assigned To','Status']; downloadCsv(cols,DATA.allLeads,'all_leads'); }
+
+function parseCsv(text){
+  const lines=text.split(/\r?\n/).filter(l=>l.trim()!=='');
+  if(!lines.length) return [];
+  const headers=lines[0].split(',').map(h=>h.trim().replace(/^"|"$/g,''));
+  return lines.slice(1).map(line=>{
+    const vals=line.match(/(".*?"|[^,]+|(?<=,)(?=,)|^$)/g)||line.split(',');
+    const row={};
+    headers.forEach((h,i)=>{ row[h]=(vals[i]||'').toString().trim().replace(/^"|"$/g,''); });
+    return row;
+  });
+}
+
+function openImportGuide(){
+  let inner='<h2>Import old Google Sheet data</h2>'
+    +'<p class="msub">Purana data CSV se All Leads me import karein. Niche steps follow karein:</p>'
+    +'<div style="background:#f6f7fb;border-radius:8px;padding:12px 14px;margin-bottom:14px;font-size:13px;line-height:1.6">'
+    +'<b>Step 1:</b> Apna purana Google Sheet kholo.<br>'
+    +'<b>Step 2:</b> File &rarr; Download &rarr; <b>Comma Separated Values (.csv)</b>.<br>'
+    +'<b>Step 3:</b> CSV me ye columns honi chahiye (exact spelling se, header row me): <br>'
+    +'<code style="font-size:12px;background:#fff;padding:2px 6px;border-radius:4px">Name, Contact No., Email, City, Reference</code><br>'
+    +'<b>Step 4:</b> Niche file choose karo aur Import dabao — har row All Leads me add hokar auto-assign ho jayegi.'
+    +'</div>'
+    +'<label>Choose CSV file</label><input type="file" id="m_csvfile" accept=".csv">'
+    +'<div id="importPreview" class="hintline" style="margin-top:8px"></div>'
+    +'<div class="actions"><button class="btn ghost" id="m_cancel">Cancel</button><button class="btn primary" id="m_import" disabled>Import</button></div>';
+  modal.innerHTML=inner; overlay.classList.add('show');
+  document.getElementById('m_cancel').onclick=closeModal;
+  let parsedRows=[];
+  document.getElementById('m_csvfile').addEventListener('change',async(e)=>{
+    const file=e.target.files[0]; if(!file) return;
+    const text=await file.text();
+    parsedRows=parseCsv(text).filter(r=>r['Name']&&r['Contact No.']);
+    document.getElementById('importPreview').textContent=parsedRows.length+' rows mile is file me. Import button dabao.';
+    document.getElementById('m_import').disabled=parsedRows.length===0;
+  });
+  document.getElementById('m_import').onclick=async()=>{
+    if(!parsedRows.length) return;
+    closeModal(); toast('Importing '+parsedRows.length+' leads…');
+    let done=0;
+    for(const row of parsedRows){
+      await post({action:'addLead',name:row['Name']||'',contact:row['Contact No.']||row['Contact']||'',email:row['Email']||'',city:row['City']||'',reference:row['Reference']||row['Full Detailed Remarks']||'Imported from old sheet',oneOnOne:'Maybe'});
+      done++;
+      if(done%5===0) toast('Imported '+done+'/'+parsedRows.length+'…');
+    }
+    const res=await loadAll(); if(res&&res.success){DATA=res.data;buildSystems();buildNav();render();}
+    toast('Import complete: '+done+' leads added');
+  };
+}
 function downloadCsv(cols,rows,name){
   const e=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
   const csv=[cols.map(e).join(',')].concat(rows.map(r=>cols.map(c=>e(r[c])).join(','))).join('\r\n');
