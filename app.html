@@ -693,6 +693,7 @@ function renderAll(sys){
       +'<td>'+invPill+'</td>'
       +'<td><div class="rowbtns">'
       +'<button class="btn '+(dist?'ghost':'primary')+' sm" data-assign="'+esc(r['Client ID'])+'">'+(dist?'Re-assign':'Assign')+'</button>'
+      +'<button class="btn ghost sm" data-allremarks="'+esc(r['Client ID'])+'" data-arhname="'+esc(r['Name']||'')+'">Remarks</button>'
       +(isDup&&canDel?'<button class="btn ghost sm" style="color:var(--err)" data-dupdelete="'+esc(r['Client ID'])+'">Remove Dup</button>':'')
       +'</div></td></tr>';
   });
@@ -705,6 +706,7 @@ function renderAll(sys){
   const s=document.getElementById('search'); s.addEventListener('input',()=>{searchText=s.value;renderAll(sys);const el=document.getElementById('search');if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length);}});
   document.getElementById('importBtn').addEventListener('click',()=>openImportGuide());
   document.querySelectorAll('[data-assign]').forEach(b=>b.addEventListener('click',()=>openAssign(b.dataset.assign)));
+  document.querySelectorAll('[data-allremarks]').forEach(b=>b.addEventListener('click',()=>openAllRemarks(null,b.dataset.allremarks,b.dataset.arhname)));
   document.querySelectorAll('[data-dupdelete]').forEach(b=>b.addEventListener('click',async()=>{
     const r=DATA.allLeads.find(x=>x['Client ID']===b.dataset.dupdelete)||{};
     if(!confirm('Duplicate remove karein?\nName: '+r['Name']+'\nPhone: '+r['Contact No.']+'\nYeh All Leads + Lead FMS se delete ho jayega.'))return;
@@ -830,7 +832,7 @@ function openAllRemarks(sys,clientId,clientName){
   // All Leads
   const aRow=(DATA.allLeads||[]).find(x=>x['Client ID']===clientId);
   if(aRow&&aRow['Reference']) stages.push({label:'All Leads',date:aRow['Created On'],text:aRow['Reference']});
-  // Lead FMS
+  // Lead FMS + Zoom FMS (from lead lanes)
   const laneNums=DATA.laneList||[];
   laneNums.forEach(n=>{
     const laneData=DATA.lanes[n];
@@ -851,13 +853,20 @@ function openAllRemarks(sys,clientId,clientName){
         if(zr['Last Remarks']&&!hist.find(h=>h.text===zr['Last Remarks'])) stages.push({label:'Zoom FMS '+n,date:zr['Updated On']||'',text:zr['Last Remarks']});
       }
     }
-    if(laneData.out){
-      const or=laneData.out.find(x=>x['Client ID']===clientId);
-      if(or){
-        let hist=[]; try{ hist=JSON.parse(or['Remarks History']||'[]'); }catch(e){}
-        hist.forEach(h=>stages.push({label:'Onboarding '+n,date:h.date,text:h.text}));
-        if(or['Last Remarks']&&!hist.find(h=>h.text===or['Last Remarks'])) stages.push({label:'Onboarding '+n,date:or['Updated On']||'',text:or['Last Remarks']});
-      }
+  });
+  // Outgoing (from WM lanes — separate from lead lanes)
+  const allLaneKeys=Object.keys(DATA.lanes||{});
+  allLaneKeys.forEach(n=>{
+    const laneData=DATA.lanes[n];
+    if(!laneData||!laneData.out) return;
+    const or=laneData.out.find(x=>x['Client ID']===clientId);
+    if(or){
+      const wmObj=(DATA.wmLaneObjects||[]).find(x=>String(x.lane)===String(n));
+      const wmName=wmObj?wmObj.name:'';
+      const label='Onboarding '+(wmName?wmName:''+n);
+      let hist=[]; try{ hist=JSON.parse(or['Remarks History']||'[]'); }catch(e){}
+      hist.forEach(h=>stages.push({label:label,date:h.date,text:h.text}));
+      if(or['Last Remarks']&&!hist.find(h=>h.text===or['Last Remarks'])) stages.push({label:label,date:or['Updated On']||'',text:or['Last Remarks']});
     }
   });
   // Sort by date descending
@@ -1037,8 +1046,8 @@ function openEdit(sys,clientId){
       if(body.status==='Onboarding'){
         closeModal(); toast('Sending to Outgoing Onboarding…');
         await writeThenRefresh({action:'updateRow',stage:'lead',lane:sys.lane,clientId:clientId,remarks:remarks,investment:body.investment,investmentStatus:body.investmentStatus,status:body.status,contactMode:body.contactMode,productive:body.productive});
-        await writeThenRefresh({action:'moveToOutgoing',lane:sys.lane,destLane:sys.lane,clientId:clientId,nextPlanned:''});
-        toast('Sent to Outgoing Onboarding '+sys.lane); return;
+        await writeThenRefresh({action:'moveLeadToOutgoing',lane:sys.lane,clientId:clientId,nextPlanned:''});
+        toast('Sent to Outgoing Onboarding — WM assigned'); return;
       }
     }
     if(sys.type==='zoom'){ body.status=val('m_status'); body.onboardingStart=val('m_onb');
