@@ -433,7 +433,6 @@ function rowHtml(sys,r){
       +(inZoom?'<button class="btn primary sm" data-zoomedit="'+esc(id)+'" data-zoomlane="'+sys.lane+'">Zoom Meeting</button>':'')
       +(inOut?'<button class="btn primary sm" data-outedit="'+esc(id)+'" data-outlane="'+sys.lane+'">Onboarding</button>':'')
       +'<button class="btn ghost sm" data-otherheads="'+esc(id)+'" data-ohname="'+esc(r['Name']||'')+'" data-ohlane="'+sys.lane+'">Other Heads</button>'
-      +'<button class="btn ghost sm" data-allremarks="'+esc(id)+'" data-arhname="'+esc(r['Name']||'')+'">Remarks</button>'
       +'</div></td></tr>';
   }
   if(sys.type==='zoom'){
