@@ -181,7 +181,6 @@ function buildSystems(){
   if(ROLE==='admin'){
     SYSTEMS.push({id:'allLeads',label:'All Leads',type:'all'},{id:'tracking',label:'Tracking',type:'tracking'});
     lanes.forEach(n=>SYSTEMS.push({id:'lead'+n,label:laneLabel(n,'lead'),type:'lead',lane:n}));
-    lanes.forEach(n=>SYSTEMS.push({id:'zoom'+n,label:laneLabel(n,'zoom'),type:'zoom',lane:n}));
     lanes.forEach(n=>SYSTEMS.push({id:'out'+n,label:laneLabel(n,'out'),type:'out',lane:n}));
     SYSTEMS.push({id:'nbd',label:'NBD Query FMS',type:'nbd'});
   } else if(ROLE==='lead'){
@@ -267,7 +266,6 @@ function buildNav(){
   const groups=[
     ['Master', SYSTEMS.filter(s=>s.type==='all'||s.type==='tracking').map(s=>s.id)],
     ['Lead FMS', by('lead')],
-    ['Zoom FMS', by('zoom')],
     ['Outgoing Onboarding', by('out')],
     ['NBD', by('nbd')]
   ];
@@ -277,11 +275,10 @@ function buildNav(){
     html+='<div class="group">'+g+'</div>';
     ids.forEach(id=>{ const s=SYSTEMS.find(x=>x.id===id); if(s) html+='<button class="nav" data-id="'+id+'">'+s.label+'</button>'; });
   });
-  if(ROLE==='admin') html+='<div class="group">Settings</div><button class="nav" id="manageUsers">⚙ Manage Users</button><button class="nav" id="manageLanes">⚙ Manage Lanes</button>';
+  if(ROLE==='admin') html+='<div class="group">Settings</div><button class="nav" id="sheetGuide">📋 Sheet Setup Guide</button>';
   nav.innerHTML=html;
   nav.querySelectorAll('.nav').forEach(b=>{
-    if(b.id==='manageLanes') b.addEventListener('click',openManageLanes);
-    else if(b.id==='manageUsers') b.addEventListener('click',openManageUsers);
+    if(b.id==='sheetGuide') b.addEventListener('click',openSheetGuide);
     else b.addEventListener('click',()=>{current=b.dataset.id;bucketFilter='';searchText='';render();});
   });
 }
@@ -364,15 +361,14 @@ function renderStage(sys){
     +stageTab('currentdue','Current Due',c.currentdue)
     +stageTab('future','In Future',c.future)
     +'</div>';
-  html+='<div class="toolbar"><input type="text" id="search" placeholder="Search name, email, phone, city…" value="'+esc(searchText)+'"><button class="btn ghost sm" id="refreshBtn">↻ Refresh</button><button class="btn dark sm" id="exportBtn">Export CSV</button></div>';
+  html+='<div class="toolbar"><input type="text" id="search" placeholder="Search name, email, phone, city…" value="'+esc(searchText)+'"><button class="btn ghost sm" id="refreshBtn">↻ Refresh</button></div>';
 
   let list=filterRows(rows);
   list.sort((a,b)=>{const x=toDate(a['Next Planned Date']),y=toDate(b['Next Planned Date']);return (x?x.getTime():8e15)-(y?y.getTime():8e15);});
 
   // table head per stage
   let cols;
-  if(sys.type==='lead') cols=['Lead FMS Joined','Name','Contact','City','Status','Next Planned','Investment','Inv. Status','Last Remarks','Co-ord.','Actions'];
-  else if(sys.type==='zoom') cols=['Zoom Joined','Name','Contact','City','Meeting Status','Next Planned','Investment','Inv. Status','Onboarding','Last Remarks','Co-ord.','Actions'];
+  if(sys.type==='lead') cols=['Lead FMS Joined','Name','Contact','City','Status','Next Planned','Investment','Inv. Status','Last Remarks','Co-ord.','Actions'];  else if(sys.type==='zoom') cols=['Zoom Joined','Name','Contact','City','Meeting Status','Next Planned','Investment','Inv. Status','Onboarding','Last Remarks','Co-ord.','Actions'];
   else cols=['Onboarding Joined','Completed On','Name','Contact','City','Current Status','Onboarding','Next Planned','Investment','Inv. Status','Doc','Last Remarks','Wealth Mgr','Actions'];
 
   html+='<div class="tablecard"><div class="scroll"><table><thead><tr>'+cols.map(c=>'<th>'+c+'</th>').join('')+'</tr></thead><tbody>';
@@ -436,7 +432,8 @@ function rowHtml(sys,r){
       +(hasAction?'<button class="btn ghost sm" data-edit="'+esc(id)+'">Action</button>':'')
       +(inZoom?'<button class="btn primary sm" data-zoomedit="'+esc(id)+'" data-zoomlane="'+sys.lane+'">Zoom Meeting</button>':'')
       +(inOut?'<button class="btn primary sm" data-outedit="'+esc(id)+'" data-outlane="'+sys.lane+'">Onboarding</button>':'')
-      +(moved?'':'<button class="btn ghost sm" data-invest="'+esc(id)+'">Investment</button>')
+      +'<button class="btn ghost sm" data-otherheads="'+esc(id)+'" data-ohname="'+esc(r['Name']||'')+'" data-ohlane="'+sys.lane+'">Other Heads</button>'
+      +'<button class="btn ghost sm" data-allremarks="'+esc(id)+'" data-arhname="'+esc(r['Name']||'')+'">Remarks</button>'
       +'</div></td></tr>';
   }
   if(sys.type==='zoom'){
@@ -481,13 +478,14 @@ function wireStage(sys){
   const s=document.getElementById('search'); if(s) s.addEventListener('input',()=>{searchText=s.value;render();s2focus();});
   function s2focus(){const el=document.getElementById('search');if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length);}}
   const rb=document.getElementById('refreshBtn'); if(rb) rb.addEventListener('click',refresh);
-  const ex=document.getElementById('exportBtn'); if(ex) ex.addEventListener('click',()=>exportCsv(sys));
   document.querySelectorAll('[data-edit]').forEach(b=>b.addEventListener('click',()=>openEdit(sys,b.dataset.edit)));
   document.querySelectorAll('[data-zoomedit]').forEach(b=>b.addEventListener('click',()=>openEdit({type:'zoom',lane:b.dataset.zoomlane,label:'Zoom FMS '+b.dataset.zoomlane},b.dataset.zoomedit)));
   document.querySelectorAll('[data-outedit]').forEach(b=>b.addEventListener('click',()=>openEdit({type:'out',lane:b.dataset.outlane,label:'Outgoing Onboarding '+b.dataset.outlane},b.dataset.outedit)));
   document.querySelectorAll('[data-move]').forEach(b=>b.addEventListener('click',()=>moveClient(sys,b.dataset.move)));
   document.querySelectorAll('[data-complete]').forEach(b=>b.addEventListener('click',()=>completeClient(sys,b.dataset.complete)));
   document.querySelectorAll('[data-invest]').forEach(b=>b.addEventListener('click',()=>openInvestment(sys,b.dataset.invest)));
+  document.querySelectorAll('[data-otherheads]').forEach(b=>b.addEventListener('click',()=>openOtherHeads(sys,b.dataset.otherheads,b.dataset.ohname,b.dataset.ohlane)));
+  document.querySelectorAll('[data-allremarks]').forEach(b=>b.addEventListener('click',()=>openAllRemarks(sys,b.dataset.allremarks,b.dataset.arhname)));
 }
 
 async function refresh(){ const res=await loadAll(); if(res&&res.success){DATA=res.data;buildSystems();buildNav();render();toast('Refreshed');} }
@@ -506,7 +504,7 @@ function renderTracking(){
   const rows=all.filter(r=>!q||[r['Name'],r['Email'],r['Contact No.'],r['City']].join(' ').toLowerCase().includes(q));
   const done=all.filter(r=>locateClient(r['Client ID']).completed).length;
   let html='';
-  html+='<div class="head"><h1>Tracking</h1><span class="sub">'+all.length+' clients · '+done+' onboarding completed</span><span class="spacer"></span><button class="btn ghost sm" id="refreshBtn">↻ Refresh</button><button class="btn dark sm" id="exportBtn">Export CSV</button></div>';
+  html+='<div class="head"><h1>Tracking</h1><span class="sub">'+all.length+' clients · '+done+' onboarding completed</span><span class="spacer"></span><button class="btn ghost sm" id="refreshBtn">↻ Refresh</button></div>';
   html+='<div class="toolbar"><input type="text" id="search" placeholder="Search name, email, phone, city…" value="'+esc(searchText)+'"></div>';
   const cols=['Name','Contact','City','Current Stage','Current Status','Onboarding Complete','Next Planned','Last Remarks','Document'];
   html+='<div class="tablecard"><div class="scroll"><table><thead><tr>'+cols.map(c=>'<th>'+c+'</th>').join('')+'</tr></thead><tbody>';
@@ -525,7 +523,7 @@ function renderTracking(){
   document.getElementById('view').innerHTML=html;
   const s=document.getElementById('search'); s.addEventListener('input',()=>{searchText=s.value;renderTracking();const el=document.getElementById('search');el.focus();el.setSelectionRange(el.value.length,el.value.length);});
   document.getElementById('refreshBtn').addEventListener('click',refresh);
-  document.getElementById('exportBtn').addEventListener('click',exportTracking);
+  const trRefBtn=document.getElementById('refreshBtn'); if(trRefBtn) trRefBtn.addEventListener('click',refresh);
 }
 function exportTracking(){
   const cols=['Client ID','Name','Contact No.','Email','City','Current Stage','Current Status','Onboarding Complete','Next Planned Date','Last Remarks','Document'];
@@ -545,7 +543,7 @@ function renderNbd(sys){
   const comp=rows.filter(r=>r['Final Status']==='COMPLETE').length;
   let html='';
   html+='<div class="head"><h1>NBD Query FMS</h1><span class="sub">'+rows.length+' queries &nbsp; <span class="pill orange">'+(rows.length-comp)+' Under Process</span> &nbsp; <span class="pill green">'+comp+' Complete</span></span><span class="spacer"></span><button class="btn ghost" id="empBtn">Manage Employees</button><button class="btn primary" id="addQBtn">+ Add Query</button></div>';
-  html+='<div class="toolbar"><input type="text" id="search" placeholder="Search client, phone, employee…" value="'+esc(searchText)+'"><button class="btn ghost sm" id="refreshBtn">↻ Refresh</button><button class="btn dark sm" id="exportBtn">Export CSV</button></div>';
+  html+='<div class="toolbar"><input type="text" id="search" placeholder="Search client, phone, employee…" value="'+esc(searchText)+'"><button class="btn ghost sm" id="refreshBtn">↻ Refresh</button></div>';
   const cols=['Client Name','Phone','Remarks','Status','Final Status','Query Status','Next Planned','Employee','Actions'];
   html+='<div class="tablecard"><div class="scroll"><table><thead><tr>'+cols.map(c=>'<th>'+c+'</th>').join('')+'</tr></thead><tbody>';
   if(!list.length) html+='<tr><td colspan="'+cols.length+'" class="empty">No queries yet.</td></tr>';
@@ -565,7 +563,6 @@ function renderNbd(sys){
   document.getElementById('addQBtn').addEventListener('click',openNbdAdd);
   document.getElementById('empBtn').addEventListener('click',openManageEmployees);
   document.getElementById('refreshBtn').addEventListener('click',refresh);
-  document.getElementById('exportBtn').addEventListener('click',()=>downloadCsv(['Query ID','Client Name','Phone Number','Remarks','Status','Final Status','Query Status','Next Planned Date','Employee','Created On','Updated On'],rows,'nbd_query_fms'));
   const s=document.getElementById('search'); s.addEventListener('input',()=>{searchText=s.value;renderNbd(sys);const el=document.getElementById('search');el.focus();el.setSelectionRange(el.value.length,el.value.length);});
   document.querySelectorAll('[data-qedit]').forEach(b=>b.addEventListener('click',()=>openNbdEdit(b.dataset.qedit)));
 }
@@ -666,10 +663,10 @@ function renderAll(sys){
     +'<button class="tab '+(allLeadsTab==='Not Required'?'on':'')+'" data-altab="Not Required">Not Required <span class="cnt">'+nrCnt+'</span></button>'
     +'</div>';
 
-  html+='<div class="toolbar"><input type="text" id="search" placeholder="Search name, email, phone, city…" value="'+esc(searchText)+'"><button class="btn ghost sm" id="refreshBtn">↻ Refresh</button><input type="file" id="importFile" accept=".csv" style="display:none"><button class="btn primary sm" id="importBtn">⬆ Import CSV</button><button class="btn dark sm" id="exportBtn">Export CSV</button></div>';
+  html+='<div class="toolbar"><input type="text" id="search" placeholder="Search name, email, phone, city…" value="'+esc(searchText)+'"><button class="btn ghost sm" id="refreshBtn">↻ Refresh</button><input type="file" id="importFile" accept=".csv" style="display:none"><button class="btn primary sm" id="importBtn">⬆ Import CSV</button></div>';
   const q=searchText.trim().toLowerCase();
   const list=rows.filter(r=>!q||[r['Name'],r['Email'],r['Contact No.'],r['City']].join(' ').toLowerCase().includes(q));
-  const cols=['Created On','Source','Name','Contact','Email','City','Lane','Client Co-ordinator','Status','Inv. Status','Actions'];
+  const cols=['Created On','Source','Name','Contact','Email','City','Lane','Client Co-ordinator','Reference','Referrer','Status','Inv. Status','Actions'];
   html+='<div class="tablecard"><div class="scroll"><table><thead><tr>'+cols.map(c=>'<th>'+c+'</th>').join('')+'</tr></thead><tbody>';
   if(!list.length) html+='<tr><td colspan="'+cols.length+'" class="empty">No leads here.</td></tr>';
   else list.forEach(r=>{
@@ -685,6 +682,8 @@ function renderAll(sys){
       +'<td>'+esc(r['Email'])+'</td><td>'+esc(r['City'])+'</td>'
       +'<td>'+esc(r['Assigned Lane']||'—')+'</td>'
       +'<td>'+esc(r['Assigned To']||'—')+'</td>'
+      +'<td class="wrap" style="max-width:120px">'+esc(r['Reference']||'—')+'</td>'
+      +'<td>'+(r['Referrer']?'<span class="pill blue">'+esc(r['Referrer'])+'</span>':'—')+'</td>'
       +'<td>'+(dist?'<span class="pill green">Distributed</span>':'<span class="pill orange">New</span>')+'</td>'
       +'<td>'+invPill+'</td>'
       +'<td><div class="rowbtns">'
@@ -699,7 +698,6 @@ function renderAll(sys){
   document.querySelectorAll('[data-altab]').forEach(b=>b.addEventListener('click',()=>{allLeadsTab=b.dataset.altab;renderAll(sys);}));
   const rfb=document.getElementById('refreshBtn'); if(rfb) rfb.addEventListener('click',refresh);
   const s=document.getElementById('search'); s.addEventListener('input',()=>{searchText=s.value;renderAll(sys);const el=document.getElementById('search');if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length);}});
-  document.getElementById('exportBtn').addEventListener('click',()=>exportAll());
   document.getElementById('importBtn').addEventListener('click',()=>openImportGuide());
   document.querySelectorAll('[data-assign]').forEach(b=>b.addEventListener('click',()=>openAssign(b.dataset.assign)));
   document.querySelectorAll('[data-dupdelete]').forEach(b=>b.addEventListener('click',async()=>{
@@ -779,6 +777,107 @@ function openInvestment(sys,clientId){
     await writeThenRefresh({action:'updateRow',stage:sys.type,lane:sys.lane,clientId:clientId,investment:JSON.stringify(inv)});
     toast('Investment saved');
   };
+}
+
+function openOtherHeads(sys,clientId,clientName,lane){
+  // Load existing Other Heads from All Leads
+  const allRow=(DATA.allLeads||[]).find(x=>x['Client ID']===clientId)||{};
+  let existing=[];
+  try{ existing=JSON.parse(allRow['Other Heads']||'[]'); }catch(e){}
+  let inner='<h2>Other Heads — '+esc(clientName)+'</h2><p class="msub">Family member, Company/Firm ya Friend ka naam add karein.</p>';
+  if(existing.length){
+    inner+='<div style="margin-bottom:12px;background:var(--surface-1);border-radius:8px;padding:10px">';
+    inner+='<div style="font-size:12px;color:var(--ink-soft);margin-bottom:6px">Pehle se added:</div>';
+    existing.forEach(h=>{
+      const badge=h.type==='family'?'Family':h.type==='company'?'Company/Firm':'Friend';
+      inner+='<div style="font-size:13px;padding:4px 0;border-bottom:0.5px solid var(--line)"><span class="pill '+(h.type==='friend'?'blue':'green')+'">'+badge+'</span> '+esc(h.name)+(h.contact?' · '+esc(h.contact):'')+'</div>';
+    });
+    inner+='</div>';
+  }
+  inner+='<label>Type</label>'+sel('m_headType',['family','company','friend'],'friend')
+    +'<label>Name *</label><input id="m_ohname" placeholder="Naam">'
+    +'<label>Contact No.</label><input id="m_ohcontact" placeholder="Phone number">'
+    +'<label>Email</label><input id="m_ohemail" placeholder="optional">'
+    +'<label>City</label><input id="m_ohcity" placeholder="optional">'
+    +'<div id="ohNote" class="hintline" style="margin-top:4px"></div>'
+    +'<div class="actions"><button class="btn ghost" id="m_cancel">Cancel</button><button class="btn primary" id="m_save">Add</button></div>';
+  modal.innerHTML=inner; overlay.classList.add('show');
+  document.getElementById('m_cancel').onclick=closeModal;
+  const typeSel=document.getElementById('m_headType');
+  const ohNote=document.getElementById('ohNote');
+  function onTypeChange(){
+    const v=typeSel.value;
+    ohNote.textContent=v==='family'?'Family member seedha Outgoing Onboarding me jayega.':v==='company'?'Company/Firm seedha Outgoing Onboarding me jayega.':'Friend ko naya Lead banaya jayega — reference me '+clientName+' ka naam aayega.';
+  }
+  typeSel.addEventListener('change',onTypeChange); onTypeChange();
+  document.getElementById('m_save').onclick=async()=>{
+    const nm=val('m_ohname');
+    if(!nm){ toast('Naam zaroori hai'); return; }
+    closeModal(); toast('Adding…');
+    await writeThenRefresh({action:'addOtherHead',headType:val('m_headType'),name:nm,contact:val('m_ohcontact'),email:val('m_ohemail'),city:val('m_ohcity'),sourceName:clientName,sourceClientId:clientId,lane:lane});
+    toast('Added successfully');
+  };
+}
+
+function openAllRemarks(sys,clientId,clientName){
+  // Gather remarks from all stages
+  const stages=[];
+  // All Leads
+  const aRow=(DATA.allLeads||[]).find(x=>x['Client ID']===clientId);
+  if(aRow&&aRow['Reference']) stages.push({label:'All Leads',date:aRow['Created On'],text:aRow['Reference']});
+  // Lead FMS
+  const laneNums=DATA.laneList||[];
+  laneNums.forEach(n=>{
+    const laneData=DATA.lanes[n];
+    if(!laneData) return;
+    if(laneData.lead){
+      const lr=laneData.lead.find(x=>x['Client ID']===clientId);
+      if(lr){
+        let hist=[]; try{ hist=JSON.parse(lr['Remarks History']||'[]'); }catch(e){}
+        hist.forEach(h=>stages.push({label:'Lead FMS '+n,date:h.date,text:h.text}));
+        if(lr['Last Remarks']&&!hist.find(h=>h.text===lr['Last Remarks'])) stages.push({label:'Lead FMS '+n,date:lr['Updated On']||'',text:lr['Last Remarks']});
+      }
+    }
+    if(laneData.zoom){
+      const zr=laneData.zoom.find(x=>x['Client ID']===clientId);
+      if(zr){
+        let hist=[]; try{ hist=JSON.parse(zr['Remarks History']||'[]'); }catch(e){}
+        hist.forEach(h=>stages.push({label:'Zoom FMS '+n,date:h.date,text:h.text}));
+        if(zr['Last Remarks']&&!hist.find(h=>h.text===zr['Last Remarks'])) stages.push({label:'Zoom FMS '+n,date:zr['Updated On']||'',text:zr['Last Remarks']});
+      }
+    }
+    if(laneData.out){
+      const or=laneData.out.find(x=>x['Client ID']===clientId);
+      if(or){
+        let hist=[]; try{ hist=JSON.parse(or['Remarks History']||'[]'); }catch(e){}
+        hist.forEach(h=>stages.push({label:'Onboarding '+n,date:h.date,text:h.text}));
+        if(or['Last Remarks']&&!hist.find(h=>h.text===or['Last Remarks'])) stages.push({label:'Onboarding '+n,date:or['Updated On']||'',text:or['Last Remarks']});
+      }
+    }
+  });
+  // Sort by date descending
+  stages.sort((a,b)=>{const x=toDate(a.date),y=toDate(b.date);return (y?y.getTime():0)-(x?x.getTime():0);});
+  let inner='<h2>All Remarks — '+esc(clientName)+'</h2>';
+  if(!stages.length){ inner+='<p class="hintline">Abhi tak koi remark nahi hai.</p>'; }
+  else{
+    const stageColors={'Lead FMS':'#e6f1fb','Zoom FMS':'#eaf3de','Onboarding':'#faeeda','All Leads':'#f1efe8'};
+    inner+='<div style="max-height:400px;overflow-y:auto">';
+    stages.forEach(s=>{
+      const key=Object.keys(stageColors).find(k=>s.label.startsWith(k))||'All Leads';
+      const color=stageColors[key];
+      inner+='<div style="padding:8px 10px;margin-bottom:6px;border-radius:8px;background:'+color+'">'
+        +'<div style="display:flex;justify-content:space-between;margin-bottom:3px">'
+        +'<span style="font-size:11px;font-weight:600;color:#555">'+esc(s.label)+'</span>'
+        +'<span style="font-size:11px;color:#888">'+esc(fmtDT(s.date)||'')+'</span>'
+        +'</div>'
+        +'<div style="font-size:13px">'+esc(s.text)+'</div>'
+        +'</div>';
+    });
+    inner+='</div>';
+  }
+  inner+='<div class="actions"><button class="btn primary" id="m_cancel">Close</button></div>';
+  modal.innerHTML=inner; overlay.classList.add('show');
+  document.getElementById('m_cancel').onclick=closeModal;
 }
 
 function openAssign(clientId){
@@ -1003,15 +1102,19 @@ function openManageUsers(){
   const users=(DATA.users||[]);
   const lanes=DATA.laneList||[1,2,3];
   const roleOpts=['admin','lead','onboarding'];
-  let inner='<h2>Manage Users</h2><p class="msub">Each employee logs in with their own password and sees only their system. Admin sees everything.</p>';
+  let inner='<h2>Manage Users</h2><p class="msub">Har employee ka WhatsApp number daalna zaroori hai taaki unhe notifications milein.</p>';
   inner+='<div id="userList">'+(users.length?users.map(u=>(
     '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid var(--line)">'
-    +'<span><b>'+esc(u.name||'(no name)')+'</b> &nbsp; <span class="hintline">'+esc(u.role)+(u.lane?(' · lane '+esc(u.lane)):'')+' · pw: '+esc(u.password)+'</span></span>'
+    +'<div><b>'+esc(u.name||'(no name)')+'</b>'
+    +(u.phone?'<span class="hintline"> · 📱 '+esc(u.phone)+'</span>':'<span style="color:var(--err);font-size:12px"> · ⚠ phone missing</span>')
+    +'<br><span class="hintline">'+esc(u.role)+(u.lane?' · lane '+esc(u.lane):'')+' · pw: '+esc(u.password)+'</span></div>'
     +'<button class="btn ghost sm" data-userremove="'+esc(u.password)+'">Remove</button></div>'
   )).join(''):'<div class="hintline">No employees yet. Add one below.</div>')+'</div>';
   inner+='<div style="margin-top:12px;border-top:1px solid var(--line);padding-top:12px">'
     +'<label>Name</label><input id="u_name" placeholder="e.g. Sunayana">'
     +'<label>Password</label><input id="u_pw" placeholder="login password">'
+    +'<label>WhatsApp Phone Number <span style="color:var(--err)">*</span> <span class="hintline">(10 digit ya 91XXXXXXXXXX)</span></label>'
+    +'<input id="u_phone" placeholder="e.g. 9810000001" type="tel">'
     +'<label>Role</label>'+sel('u_role',roleOpts,'lead')
     +'<label>Lane <span class="hintline">(1, 2, 3… — admin ke liye blank chhodein)</span></label>'
     +'<select id="u_lane"><option value="">—</option>'+lanes.map(n=>'<option>'+n+'</option>').join('')+'</select>'
@@ -1020,16 +1123,81 @@ function openManageUsers(){
   modal.innerHTML=inner; overlay.classList.add('show');
   document.getElementById('m_cancel').onclick=closeModal;
   document.getElementById('m_addUser').onclick=async()=>{
-    const pw=val('u_pw'), nm=val('u_name'), role=val('u_role'), lane=val('u_lane');
+    const pw=val('u_pw'), nm=val('u_name'), role=val('u_role'), lane=val('u_lane'), phone=val('u_phone');
     if(!pw){toast('Password zaroori hai');return;}
-    if(role!=='admin' && !lane){toast('Lane select karein');return;}
-    toast('Adding…'); await writeThenRefresh({action:'userAdd',password:pw,name:nm,role:role,lane:lane}); openManageUsers(); toast('User added');
+    if(!phone){toast('WhatsApp phone number zaroori hai');return;}
+    if(role!=='admin'&&!lane){toast('Lane select karein');return;}
+    toast('Adding…'); await writeThenRefresh({action:'userAdd',password:pw,name:nm,role:role,lane:lane,phone:phone}); openManageUsers(); toast('User added');
   };
   document.querySelectorAll('[data-userremove]').forEach(b=>b.addEventListener('click',async()=>{
     const pw=b.dataset.userremove;
     if(!confirm('Remove this user? Woh login nahi kar payega.'))return;
     toast('Removing…'); await writeThenRefresh({action:'userRemove',password:pw}); openManageUsers(); toast('User removed');
   }));
+}
+function openSheetGuide(){
+  const sheetId='1IbgP41zCkZzLA5GJN_ueWzVTwS23lyTD1f0MllXYnZE';
+  const base='https://docs.google.com/spreadsheets/d/'+sheetId+'/edit#gid=';
+  let inner='<h2>Sheet Setup Guide</h2><p class="msub">Employees, lanes aur coordinators seedha Google Sheet se manage karein — app apne aap reflect karega.</p>';
+
+  inner+='<div style="border:0.5px solid var(--line);border-radius:8px;overflow:hidden;margin-bottom:12px">';
+
+  // Users tab
+  inner+='<div style="padding:12px;border-bottom:0.5px solid var(--line)">'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'
+    +'<b style="font-size:13px">👤 Users tab — Employees</b>'
+    +'<a href="'+base+'0" target="_blank" style="font-size:12px;color:var(--accent)">Sheet kholein ↗</a></div>'
+    +'<div style="font-size:12px;color:var(--ink-soft);line-height:1.7">'
+    +'<b>Columns:</b> Password &nbsp;|&nbsp; Role &nbsp;|&nbsp; Lane &nbsp;|&nbsp; Name &nbsp;|&nbsp; Phone<br>'
+    +'<b>Role values:</b> <code>lead</code> ya <code>onboarding</code> (admin ke liye blank)<br>'
+    +'<b>Phone:</b> 10 digit ya 91XXXXXXXXXX (WhatsApp ke liye zaroori)<br>'
+    +'<b>Naya employee:</b> nayi row add karo → refresh karo → login kaam karega<br>'
+    +'<b>Employee delete:</b> row delete karo → woh login nahi kar payega<br>'
+    +'<b>Password change:</b> Password column me edit karo'
+    +'</div>'
+    +'<div style="margin-top:8px;background:var(--surface-1);border-radius:6px;padding:8px;font-size:11.5px;font-family:monospace">'
+    +'Password &nbsp;&nbsp;| Role &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;| Lane | Name &nbsp;&nbsp;&nbsp;&nbsp;| Phone<br>'
+    +'Sunayana123 | lead &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;| 1 &nbsp;&nbsp;&nbsp;| Sunayana &nbsp;| 9810000001<br>'
+    +'Rahul456 &nbsp;&nbsp;&nbsp;| lead &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;| 2 &nbsp;&nbsp;&nbsp;| Rahul &nbsp;&nbsp;&nbsp;&nbsp;| 9820000002<br>'
+    +'Curie789 &nbsp;&nbsp;&nbsp;| onboarding | 1 &nbsp;&nbsp;&nbsp;| Curie &nbsp;&nbsp;&nbsp;&nbsp;| 9830000003'
+    +'</div></div>';
+
+  // Lanes tab
+  inner+='<div style="padding:12px;border-bottom:0.5px solid var(--line)">'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'
+    +'<b style="font-size:13px">🏷 Lanes tab — Lead FMS / Zoom / Outgoing</b>'
+    +'<a href="'+base+'0" target="_blank" style="font-size:12px;color:var(--accent)">Sheet kholein ↗</a></div>'
+    +'<div style="font-size:12px;color:var(--ink-soft);line-height:1.7">'
+    +'<b>Columns:</b> Lane &nbsp;|&nbsp; Coordinator<br>'
+    +'<b>Nayi lane:</b> naya row daalo (Lane=4, Coordinator=naam) → refresh → Lead FMS 4, Zoom FMS 4, Outgoing 4 apne aap ban jaayenge<br>'
+    +'<b>Rename:</b> Coordinator column me naam badlo → sidebar me reflect hoga<br>'
+    +'<b>Delete lane:</b> row delete karo → app se hide ho jaayegi (sheet tabs data ke saath safe rahenge)'
+    +'</div>'
+    +'<div style="margin-top:8px;background:var(--surface-1);border-radius:6px;padding:8px;font-size:11.5px;font-family:monospace">'
+    +'Lane | Coordinator<br>1 &nbsp;&nbsp;&nbsp;| Sunayana<br>2 &nbsp;&nbsp;&nbsp;| Rahul<br>3 &nbsp;&nbsp;&nbsp;| (blank — no coordinator yet)'
+    +'</div></div>';
+
+  // Name tab
+  inner+='<div style="padding:12px">'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'
+    +'<b style="font-size:13px">📋 Name tab — Coordinators list</b>'
+    +'<a href="'+base+'0" target="_blank" style="font-size:12px;color:var(--accent)">Sheet kholein ↗</a></div>'
+    +'<div style="font-size:12px;color:var(--ink-soft);line-height:1.7">'
+    +'<b>Col A:</b> Client Co-ordinator names (Lead FMS dropdown me aayenge)<br>'
+    +'<b>Col B:</b> Wealth Manager names (Outgoing dropdown me aayenge)<br>'
+    +'<b>Naya naam:</b> column me add karo → agar Col A me naya naam hai to nayi lane bhi auto-banegi → refresh'
+    +'</div>'
+    +'<div style="margin-top:8px;background:var(--surface-1);border-radius:6px;padding:8px;font-size:11.5px;font-family:monospace">'
+    +'Client Co-ordinator | Wealth Manager<br>Sunayana &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;| Curie<br>Rahul &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;| Priya'
+    +'</div></div></div>';
+
+  inner+='<div style="background:var(--surface-1);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--ink-soft);margin-top:4px">'
+    +'💡 Sheet me koi bhi change karne ke baad app me <b>Refresh</b> dabao — changes usi waqt dikh jaayenge.'
+    +'</div>';
+
+  inner+='<div class="actions"><button class="btn ghost" id="m_cancel">Close</button></div>';
+  modal.innerHTML=inner; overlay.classList.add('show');
+  document.getElementById('m_cancel').onclick=closeModal;
 }
 function openManageLanes(){
   const lanes=DATA.laneObjects||[];
@@ -1075,7 +1243,7 @@ function parseCsv(text){
   if(!lines.length) return [];
   const headers=lines[0].split(',').map(h=>h.trim().replace(/^"|"$/g,''));
   return lines.slice(1).map(line=>{
-    const vals=line.match(/(".*?"|[^,]+|(?<=,)(?=,)|^$)/g)||line.split(',');
+    const vals=line.split(',').map(v=>v.trim().replace(/^"|"$/g,''));
     const row={};
     headers.forEach((h,i)=>{ row[h]=(vals[i]||'').toString().trim().replace(/^"|"$/g,''); });
     return row;
