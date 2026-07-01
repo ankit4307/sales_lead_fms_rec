@@ -464,7 +464,7 @@ function rowHtml(sys,r){
     +'<td>'+(r['Document']?'<a href="'+esc(r['Document'])+'" target="_blank" rel="noopener">View</a>':'—')+'</td>'
     +'<td class="wrap">'+esc(r['Last Remarks']||'—')+'</td>'
     +'<td>'+esc(r['Assigned To']||'—')+'</td>'
-    +'<td><div class="rowbtns"><button class="btn ghost sm" data-edit="'+esc(id)+'">Action</button><button class="btn dark sm" data-complete="'+esc(id)+'">Onboarding Complete</button></div></td></tr>';
+    +'<td><div class="rowbtns"><button class="btn ghost sm" data-edit="'+esc(id)+'">Action</button><button class="btn ghost sm" data-otherheads="'+esc(id)+'" data-ohname="'+esc(r['Name']||'')+'" data-ohlane="'+sys.lane+'">Other Heads</button><button class="btn dark sm" data-complete="'+esc(id)+'">Onboarding Complete</button></div></td></tr>';
 }
 function onbPill(v){ v=(v||'Under Process'); if(v==='Done')return'<span class="pill green">Done</span>'; if(v==='Not Required')return'<span class="pill grey">Not Required</span>'; return'<span class="pill orange">Under Process</span>'; }
 
