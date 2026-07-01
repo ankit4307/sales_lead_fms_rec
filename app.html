@@ -795,11 +795,13 @@ function openOtherHeads(sys,clientId,clientName,lane){
     inner+='<div style="font-size:12px;color:var(--ink-soft);margin-bottom:6px">Pehle se added:</div>';
     existing.forEach(h=>{
       const badge=h.type==='family'?'Family':h.type==='company'?'Company/Firm':'Friend';
-      inner+='<div style="font-size:13px;padding:4px 0;border-bottom:0.5px solid var(--line)"><span class="pill '+(h.type==='friend'?'blue':'green')+'">'+badge+'</span> '+esc(h.name)+(h.contact?' · '+esc(h.contact):'')+'</div>';
+      const extraLabel=h.extra?(' · <span style="color:var(--ink-soft)">'+esc(h.extra)+'</span>'):'';
+      inner+='<div style="font-size:13px;padding:4px 0;border-bottom:0.5px solid var(--line)"><span class="pill '+(h.type==='friend'?'blue':'green')+'">'+badge+'</span> '+esc(h.name)+(h.contact?' · '+esc(h.contact):'')+extraLabel+'</div>';
     });
     inner+='</div>';
   }
   inner+='<label>Type</label>'+sel('m_headType',['family','company','friend'],'friend')
+    +'<div id="ohExtraField"></div>'
     +'<label>Name *</label><input id="m_ohname" placeholder="Naam">'
     +'<label>Contact No.</label><input id="m_ohcontact" placeholder="Phone number">'
     +'<label>Email</label><input id="m_ohemail" placeholder="optional">'
@@ -811,17 +813,28 @@ function openOtherHeads(sys,clientId,clientName,lane){
   document.getElementById('m_cancel').onclick=closeModal;
   const typeSel=document.getElementById('m_headType');
   const ohNote=document.getElementById('ohNote');
+  const ohExtra=document.getElementById('ohExtraField');
   function onTypeChange(){
     const v=typeSel.value;
-    ohNote.textContent=v==='family'?'Family member seedha Outgoing Onboarding me jayega.':v==='company'?'Company/Firm seedha Outgoing Onboarding me jayega.':'Friend ko naya Lead banaya jayega — reference me '+clientName+' ka naam aayega.';
+    if(v==='family'){
+      ohExtra.innerHTML='<label>Relationship *</label>'+sel('m_ohextra',['Spouse','Son','Daughter','Father','Mother','Brother','Sister','Other'],'Spouse');
+      ohNote.textContent='Family member seedha Outgoing Onboarding me jayega.';
+    } else if(v==='company'){
+      ohExtra.innerHTML='<label>Company Type *</label>'+sel('m_ohextra',['Proprietorship','Partnership','Private Limited','Public Limited','LLP','Trust','HUF','Other'],'Proprietorship');
+      ohNote.textContent='Company/Firm seedha Outgoing Onboarding me jayega.';
+    } else {
+      ohExtra.innerHTML='';
+      ohNote.textContent='Friend ko naya Lead banaya jayega — reference me '+clientName+' ka naam aayega.';
+    }
   }
   typeSel.addEventListener('change',onTypeChange); onTypeChange();
   document.getElementById('m_save').onclick=async()=>{
     const nm=val('m_ohname'), ref=val('m_ohref');
     if(!nm){ toast('Naam zaroori hai'); return; }
     if(!ref){ toast('Reference zaroori hai'); return; }
+    const extra=val('m_ohextra');
     closeModal(); toast('Adding…');
-    await writeThenRefresh({action:'addOtherHead',headType:val('m_headType'),name:nm,contact:val('m_ohcontact'),email:val('m_ohemail'),city:val('m_ohcity'),reference:val('m_ohref'),sourceName:clientName,sourceClientId:clientId,lane:lane});
+    await writeThenRefresh({action:'addOtherHead',headType:val('m_headType'),name:nm,contact:val('m_ohcontact'),email:val('m_ohemail'),city:val('m_ohcity'),reference:val('m_ohref'),extraField:extra,sourceName:clientName,sourceClientId:clientId,lane:lane});
     toast('Added successfully');
   };
 }
