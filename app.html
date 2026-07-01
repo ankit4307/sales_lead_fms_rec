@@ -374,8 +374,8 @@ function renderStage(sys){
 
   // table head per stage
   let cols;
-  if(sys.type==='lead') cols=['Lead FMS Joined','Name','Contact','City','Status','Next Planned','Investment','Inv. Status','Last Remarks','Co-ord.','Actions'];  else if(sys.type==='zoom') cols=['Zoom Joined','Name','Contact','City','Meeting Status','Next Planned','Investment','Inv. Status','Onboarding','Last Remarks','Co-ord.','Actions'];
-  else cols=['Onboarding Joined','Completed On','Name','Contact','City','Current Status','Onboarding','Next Planned','Investment','Inv. Status','Doc','Last Remarks','Wealth Mgr','Actions'];
+  if(sys.type==='lead') cols=['Lead FMS Joined','Name','Contact','City','Status','Next Planned','Investment','Inv. Status','Last Remarks','Actions'];  else if(sys.type==='zoom') cols=['Zoom Joined','Name','Contact','City','Meeting Status','Next Planned','Investment','Inv. Status','Onboarding','Last Remarks','Co-ord.','Actions'];
+  else cols=['Onboarding Joined','Completed On','Name','Contact','City','Current Status','Onboarding','Next Planned','Investment','Inv. Status','Doc','Last Remarks','Actions'];
 
   html+='<div class="tablecard"><div class="scroll"><table><thead><tr>'+cols.map(c=>'<th>'+c+'</th>').join('')+'</tr></thead><tbody>';
   if(!list.length){ html+='<tr><td colspan="'+cols.length+'" class="empty">No clients here.</td></tr>'; }
@@ -433,7 +433,6 @@ function rowHtml(sys,r){
       +'<td>'+dateCell(r['Next Planned Date'])+'</td>'
       +investCell(r)+invStatusCell(r)
       +'<td class="wrap">'+esc(r['Last Remarks']||'—')+'</td>'
-      +'<td>'+esc(r['Assigned To']||'—')+'</td>'
       +'<td><div class="rowbtns">'
       +(hasAction?'<button class="btn ghost sm" data-edit="'+esc(id)+'">Action</button>':'')
       +(inZoom?'<button class="btn primary sm" data-zoomedit="'+esc(id)+'" data-zoomlane="'+sys.lane+'">Zoom Meeting</button>':'')
@@ -463,7 +462,6 @@ function rowHtml(sys,r){
     +investCell(invRow)+invStatusCell(invRow)
     +'<td>'+(r['Document']?'<a href="'+esc(r['Document'])+'" target="_blank" rel="noopener">View</a>':'—')+'</td>'
     +'<td class="wrap">'+esc(r['Last Remarks']||'—')+'</td>'
-    +'<td>'+esc(r['Assigned To']||'—')+'</td>'
     +'<td><div class="rowbtns"><button class="btn ghost sm" data-edit="'+esc(id)+'">Action</button><button class="btn ghost sm" data-otherheads="'+esc(id)+'" data-ohname="'+esc(r['Name']||'')+'" data-ohlane="'+sys.lane+'">Other Heads</button><button class="btn dark sm" data-complete="'+esc(id)+'">Onboarding Complete</button></div></td></tr>';
 }
 function onbPill(v){ v=(v||'Under Process'); if(v==='Done')return'<span class="pill green">Done</span>'; if(v==='Not Required')return'<span class="pill grey">Not Required</span>'; return'<span class="pill orange">Under Process</span>'; }
@@ -806,6 +804,7 @@ function openOtherHeads(sys,clientId,clientName,lane){
     +'<label>Contact No.</label><input id="m_ohcontact" placeholder="Phone number">'
     +'<label>Email</label><input id="m_ohemail" placeholder="optional">'
     +'<label>City</label><input id="m_ohcity" placeholder="optional">'
+    +'<label>Reference <span style="color:var(--err)">*</span></label><input id="m_ohref" placeholder="zaroori hai">'
     +'<div id="ohNote" class="hintline" style="margin-top:4px"></div>'
     +'<div class="actions"><button class="btn ghost" id="m_cancel">Cancel</button><button class="btn primary" id="m_save">Add</button></div>';
   modal.innerHTML=inner; overlay.classList.add('show');
@@ -818,10 +817,11 @@ function openOtherHeads(sys,clientId,clientName,lane){
   }
   typeSel.addEventListener('change',onTypeChange); onTypeChange();
   document.getElementById('m_save').onclick=async()=>{
-    const nm=val('m_ohname');
+    const nm=val('m_ohname'), ref=val('m_ohref');
     if(!nm){ toast('Naam zaroori hai'); return; }
+    if(!ref){ toast('Reference zaroori hai'); return; }
     closeModal(); toast('Adding…');
-    await writeThenRefresh({action:'addOtherHead',headType:val('m_headType'),name:nm,contact:val('m_ohcontact'),email:val('m_ohemail'),city:val('m_ohcity'),sourceName:clientName,sourceClientId:clientId,lane:lane});
+    await writeThenRefresh({action:'addOtherHead',headType:val('m_headType'),name:nm,contact:val('m_ohcontact'),email:val('m_ohemail'),city:val('m_ohcity'),reference:val('m_ohref'),sourceName:clientName,sourceClientId:clientId,lane:lane});
     toast('Added successfully');
   };
 }
