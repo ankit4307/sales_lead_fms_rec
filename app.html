@@ -169,6 +169,11 @@ const ZOOM_STATUSES = [
 
 let SYSTEMS = [];
 function laneLabel(n,type){
+  if(type==='out'){
+    const obj=(DATA.wmLaneObjects||[]).find(x=>String(x.lane)===String(n));
+    const nm=obj&&obj.name?(' — '+obj.name):'';
+    return 'Outgoing Onboarding '+n+nm;
+  }
   const obj=(DATA.laneObjects||[]).find(x=>String(x.lane)===String(n));
   const coord=obj&&obj.coordinator?(' — '+obj.coordinator):'';
   if(type==='lead') return 'Lead FMS '+n+coord;
@@ -176,12 +181,13 @@ function laneLabel(n,type){
   return 'Outgoing Onboarding '+n+coord;
 }
 function buildSystems(){
-  const lanes=DATA.laneList||[1,2,3];
+  const lanes=DATA.laneList||[1,2];
+  const wmLanes=(DATA.wmLaneObjects||[]).map(x=>x.lane);
   SYSTEMS=[];
   if(ROLE==='admin'){
     SYSTEMS.push({id:'allLeads',label:'All Leads',type:'all'},{id:'tracking',label:'Tracking',type:'tracking'});
     lanes.forEach(n=>SYSTEMS.push({id:'lead'+n,label:laneLabel(n,'lead'),type:'lead',lane:n}));
-    lanes.forEach(n=>SYSTEMS.push({id:'out'+n,label:laneLabel(n,'out'),type:'out',lane:n}));
+    wmLanes.forEach(n=>SYSTEMS.push({id:'out'+n,label:laneLabel(n,'out'),type:'out',lane:n}));
     SYSTEMS.push({id:'nbd',label:'NBD Query FMS',type:'nbd'});
   } else if(ROLE==='lead'){
     SYSTEMS.push({id:'allLeads',label:'All Leads',type:'all'});
@@ -199,7 +205,7 @@ let KEY = '';
 let ROLE = 'app';
 let LANE = '';
 let NAME = '';
-let DATA = {allLeads:[], lanes:{}, laneList:[1,2,3], laneObjects:[], nbd:[], employees:[], coordinators:{client:[],wealthManager:[]}};
+let DATA = {allLeads:[], lanes:{}, laneList:[1,2,3], laneObjects:[], wmLaneObjects:[], nbd:[], employees:[], coordinators:{client:[],wealthManager:[]}};
 let current = 'allLeads';
 let bucketFilter = '';
 let searchText = '';
