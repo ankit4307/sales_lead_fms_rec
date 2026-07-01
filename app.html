@@ -359,7 +359,7 @@ function renderStage(sys){
   const stageLabel={lead:'Lead',zoom:'Zoom',out:'Onboarding'}[sys.type];
   let html='';
   let sub = rows.length+' clients in this system';
-  if(sys.type==='out'){ const done=rows.filter(r=>r['Onboarding Status']==='Done').length; const nr=rows.filter(r=>r['Onboarding Status']==='Not Required').length; sub=rows.length+' clients &nbsp; <span class="pill orange">'+(rows.length-done-nr)+' Under Process</span> &nbsp; <span class="pill green">'+done+' Done</span>'; }
+  if(sys.type==='out'){ const done=rows.filter(r=>r['Onboarding Status']==='Done').length; const nr=rows.filter(r=>r['Onboarding Status']==='Not Interested').length; sub=rows.length+' clients &nbsp; <span class="pill orange">'+(rows.length-done-nr)+' Under Process</span> &nbsp; <span class="pill green">'+done+' Done</span>'; }
   html+='<div class="head"><h1>'+esc(sys.label)+'</h1><span class="sub">'+sub+'</span><span class="spacer"></span><button class="btn primary" id="addLeadBtn">+ Add Lead</button></div>';
   html+='<div class="tabs">'
     +stageTab('','Home',rows.length)
@@ -960,7 +960,7 @@ function openEdit(sys,clientId){
 
   // Investment Yes/No toggle
   const hasInv=(()=>{ try{ const inv=JSON.parse(leadRow['Investment']||'{}'); return Object.keys(inv).some(k=>inv[k]&&inv[k]!=='0'); }catch(e){ return false; } })();
-  inner+='<label>Investment?</label>'+sel('m_invYesNo',['No','Yes'],hasInv?'Yes':'No')
+  inner+='<label>First Call Investment Confirmed?</label>'+sel('m_invYesNo',['No','Yes'],hasInv?'Yes':'No')
     +'<div id="invCheckWrap" style="display:'+(hasInv?'block':'none')+';margin-bottom:10px">';
   let curInv={}; try{ curInv=JSON.parse(leadRow['Investment']||'{}'); }catch(e){}
   INVEST_TYPES.forEach(t=>{
