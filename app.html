@@ -231,7 +231,7 @@ function post(body){
 }
 async function writeThenRefresh(body){
   await post(body);
-  await new Promise(r=>setTimeout(r,900)); // sheet write commit hone do
+  await new Promise(r=>setTimeout(r,400)); // sheet write commit hone do
   const res=await loadAll();
   if(res&&res.success){ DATA=res.data; buildSystems(); buildNav(); render(); }
 }
@@ -359,7 +359,7 @@ function renderStage(sys){
   const stageLabel={lead:'Lead',zoom:'Zoom',out:'Onboarding'}[sys.type];
   let html='';
   let sub = rows.length+' clients in this system';
-  if(sys.type==='out'){ const done=rows.filter(r=>r['Onboarding Status']==='Done').length; const nr=rows.filter(r=>r['Onboarding Status']==='Not Interested').length; sub=rows.length+' clients &nbsp; <span class="pill orange">'+(rows.length-done-nr)+' Under Process</span> &nbsp; <span class="pill green">'+done+' Done</span>'; }
+  if(sys.type==='out'){ const done=rows.filter(r=>r['Onboarding Status']==='Done').length; const nr=rows.filter(r=>r['Onboarding Status']==='Not Required').length; sub=rows.length+' clients &nbsp; <span class="pill orange">'+(rows.length-done-nr)+' Under Process</span> &nbsp; <span class="pill green">'+done+' Done</span>'; }
   html+='<div class="head"><h1>'+esc(sys.label)+'</h1><span class="sub">'+sub+'</span><span class="spacer"></span><button class="btn primary" id="addLeadBtn">+ Add Lead</button></div>';
   html+='<div class="tabs">'
     +stageTab('','Home',rows.length)
@@ -406,7 +406,7 @@ function investCell(r){
 function invStatusCell(r){
   const v=r['Investment Status']||'';
   if(v==='Monthly') return '<td><span class="pill blue">Monthly</span></td>';
-  if(v==='Not Interested') return '<td><span class="pill grey">Not Interested</span></td>';
+  if(v==='Not Required') return '<td><span class="pill grey">Not Required</span></td>';
   if(v==='Active') return '<td><span class="pill green">Active</span></td>';
   return '<td>—</td>';
 }
@@ -464,7 +464,7 @@ function rowHtml(sys,r){
     +'<td class="wrap">'+esc(r['Last Remarks']||'—')+'</td>'
     +'<td><div class="rowbtns"><button class="btn ghost sm" data-edit="'+esc(id)+'">Action</button><button class="btn ghost sm" data-otherheads="'+esc(id)+'" data-ohname="'+esc(r['Name']||'')+'" data-ohlane="'+sys.lane+'">Other Heads</button><button class="btn dark sm" data-complete="'+esc(id)+'">Onboarding Complete</button></div></td></tr>';
 }
-function onbPill(v){ v=(v||'Under Process'); if(v==='Done')return'<span class="pill green">Done</span>'; if(v==='Not Interested')return'<span class="pill grey">Not Interested</span>'; return'<span class="pill orange">Under Process</span>'; }
+function onbPill(v){ v=(v||'Under Process'); if(v==='Done')return'<span class="pill green">Done</span>'; if(v==='Not Required')return'<span class="pill grey">Not Required</span>'; return'<span class="pill orange">Under Process</span>'; }
 
 function filterRows(rows){
   const q=searchText.trim().toLowerCase();
@@ -647,14 +647,14 @@ function renderAll(sys){
   // Tab filter
   let rows=allRows;
   if(allLeadsTab==='Monthly') rows=allRows.filter(r=>r['Investment Status']==='Monthly');
-  else if(allLeadsTab==='Not Interested') rows=allRows.filter(r=>r['Investment Status']==='Not Interested');
+  else if(allLeadsTab==='Not Required') rows=allRows.filter(r=>r['Investment Status']==='Not Required');
 
   // Duplicate detection (phone or email match)
   const phoneCount={}, emailCount={};
   allRows.forEach(r=>{ if(r['Contact No.']) phoneCount[r['Contact No.']]=(phoneCount[r['Contact No.']]||0)+1; if(r['Email']) emailCount[r['Email']]=(emailCount[r['Email']]||0)+1; });
 
   const mCnt=allRows.filter(r=>r['Investment Status']==='Monthly').length;
-  const nrCnt=allRows.filter(r=>r['Investment Status']==='Not Interested').length;
+  const nrCnt=allRows.filter(r=>r['Investment Status']==='Not Required').length;
 
   let html='';
   html+='<div class="head"><h1>All Leads</h1><span class="sub">'+allRows.length+' total</span><span class="spacer"></span><button class="btn primary" id="addBtn">+ Add Lead</button></div>';
@@ -663,7 +663,7 @@ function renderAll(sys){
   html+='<div class="tabs">'
     +'<button class="tab '+(allLeadsTab===''?'on':'')+'" data-altab="">All <span class="cnt">'+allRows.length+'</span></button>'
     +'<button class="tab '+(allLeadsTab==='Monthly'?'on':'')+'" data-altab="Monthly">Monthly <span class="cnt">'+mCnt+'</span></button>'
-    +'<button class="tab '+(allLeadsTab==='Not Interested'?'on':'')+'" data-altab="Not Interested">Not Interested <span class="cnt">'+nrCnt+'</span></button>'
+    +'<button class="tab '+(allLeadsTab==='Not Required'?'on':'')+'" data-altab="Not Required">Not Required <span class="cnt">'+nrCnt+'</span></button>'
     +'</div>';
 
   html+='<div class="toolbar"><input type="text" id="search" placeholder="Search name, email, phone, city…" value="'+esc(searchText)+'"><button class="btn ghost sm" id="refreshBtn">↻ Refresh</button><input type="file" id="importFile" accept=".csv" style="display:none"><button class="btn primary sm" id="importBtn">⬆ Import CSV</button></div>';
@@ -676,7 +676,7 @@ function renderAll(sys){
     const dist=r['Status']==='Distributed';
     const isDup=(phoneCount[r['Contact No.']]>1)||(r['Email']&&emailCount[r['Email']]>1);
     const invSt=r['Investment Status']||'';
-    const invPill=invSt==='Monthly'?'<span class="pill blue">Monthly</span>':invSt==='Not Interested'?'<span class="pill grey">Not Interested</span>':'—';
+    const invPill=invSt==='Monthly'?'<span class="pill blue">Monthly</span>':invSt==='Not Required'?'<span class="pill grey">Not Required</span>':'—';
     html+='<tr'+(isDup?' style="background:#fff8f0"':'')+'>'
       +'<td style="white-space:nowrap">'+esc(fmtDT(r['Created On']))+'</td>'
       +'<td><span class="pill '+(r['Source']==='Self'?'blue':'grey')+'">'+esc(r['Source']||'—')+'</span></td>'
@@ -909,16 +909,25 @@ function openAllRemarks(sys,clientId,clientName){
 
 function openAssign(clientId){
   const r=DATA.allLeads.find(x=>x['Client ID']===clientId)||{};
-  modal.innerHTML='<h2>Send to Lead FMS</h2><p class="msub">'+esc(r['Name']||'')+' — choose which Lead FMS to send to.</p>'
-    +'<label>Send to</label>'+laneSelect('m_lane','Lead FMS','')
-    +'<label>Client Co-ordinator</label>'+coordSelect('m_assignedTo','client',r['Assigned To']||'')
+  const lanes=DATA.laneObjects||[];
+  const wmLanes=DATA.wmLaneObjects||[];
+
+  // Lane options with coordinator name
+  const laneOpts=lanes.map(lo=>'<option value="'+lo.lane+'">Lead FMS '+lo.lane+(lo.coordinator?' — '+esc(lo.coordinator):'')+'</option>').join('');
+  // WM options
+  const wmOpts='<option value="">— Auto (round-robin) —</option>'+wmLanes.map(w=>'<option value="'+w.lane+'">Outgoing '+w.lane+(w.name?' — '+esc(w.name):'')+'</option>').join('');
+
+  modal.innerHTML='<h2>Send to Lead FMS</h2><p class="msub">'+esc(r['Name']||'')+' — Lead FMS choose karein.</p>'
+    +'<label>Lead FMS (Client Co-ordinator)</label><select id="m_lane">'+laneOpts+'</select>'
+    +'<label>Preferred Wealth Manager <span class="hintline">(optional — blank = auto round-robin)</span></label><select id="m_wmLane">'+wmOpts+'</select>'
     +'<div class="actions"><button class="btn ghost" id="m_cancel">Cancel</button><button class="btn primary" id="m_save">Send</button></div>';
   overlay.classList.add('show');
   document.getElementById('m_cancel').onclick=closeModal;
   document.getElementById('m_save').onclick=async()=>{
     const lane=val('m_lane');
+    const wmLane=val('m_wmLane');
     closeModal(); toast('Sending…');
-    await writeThenRefresh({action:'assignLane',clientId:clientId,lane:lane,assignedTo:val('m_assignedTo')});
+    await writeThenRefresh({action:'assignLane',clientId:clientId,lane:lane,assignedTo:'',preferredWMLane:wmLane});
     toast('Sent to Lead FMS '+lane);
   };
 }
@@ -960,7 +969,7 @@ function openEdit(sys,clientId){
 
   // Investment Yes/No toggle
   const hasInv=(()=>{ try{ const inv=JSON.parse(leadRow['Investment']||'{}'); return Object.keys(inv).some(k=>inv[k]&&inv[k]!=='0'); }catch(e){ return false; } })();
-  inner+='<label>First Call Investment Confirmed?</label>'+sel('m_invYesNo',['No','Yes'],hasInv?'Yes':'No')
+  inner+='<label>Investment?</label>'+sel('m_invYesNo',['No','Yes'],hasInv?'Yes':'No')
     +'<div id="invCheckWrap" style="display:'+(hasInv?'block':'none')+';margin-bottom:10px">';
   let curInv={}; try{ curInv=JSON.parse(leadRow['Investment']||'{}'); }catch(e){}
   INVEST_TYPES.forEach(t=>{
@@ -975,15 +984,17 @@ function openEdit(sys,clientId){
 
   // Investment Status dropdown
   const invSt=(sys.type==='lead'?r:leadRow)['Investment Status']||'Active';
-  inner+='<label>Investment Status</label>'+sel('m_invStatus',['Active','Monthly','Not Interested'],invSt)
+  inner+='<label>Investment Status</label>'+sel('m_invStatus',['Active','Monthly','Not Required'],invSt)
     +'<div class="hintline" id="invStNote"></div>';
 
   if(sys.type==='lead'){
     inner+='<label>Lead Status</label>'+sel('m_status',LEAD_STATUSES,r['Lead Status'])
       +'<div id="notPickedNote" class="hintline" style="display:none;color:var(--err)">Not Picked: next follow-up = +6 hours, baaki fields lock.</div>'
       +'<div id="timeZoomNote" class="hintline" style="display:none;color:var(--ok)">Time Given for Zoom: client ka Zoom follow-up yahin se shuru ho jayega.</div>'
-      +'<div id="onbNote" class="hintline" style="display:none;color:var(--ok)">Onboarding: client seedha Outgoing Onboarding me jayega (+24h auto).</div>'
+      +'<div id="onbNote" class="hintline" style="display:none;color:var(--ok)">Onboarding: client seedha Outgoing Onboarding me jayega.</div>'
+      +'<div id="wmSelectWrap" style="display:none"><label>Wealth Manager <span style="color:var(--err)">*</span> <span class="hintline">(ya Auto round-robin)</span></label>'+coordSelect('m_wm','wealthManager','')+'</div>'
       +'<div id="extraFields">'
+      +'<label>Lead Time <span class="hintline">(kitne time se lead hai)</span></label>'+sel('m_leadtime',['—','1 Day','2 Days','3 Days','1 Week','2 Weeks','1 Month','2 Months','3 Months','6 Months','1 Year','More than 1 Year'],r['Lead Time']||'—')
       +'<label>Next Planned Date</label><input type="datetime-local" id="m_next" value="'+toDatetimeLocal(r['Next Planned Date'])+'">'
       +'<label>Full Detailed Remarks <span style="color:var(--err)">*</span></label><textarea id="m_remarks" required>'+esc(r['Last Remarks']||'')+'</textarea>'
       +'</div>';
@@ -995,7 +1006,7 @@ function openEdit(sys,clientId){
   } else {
     inner+='<label>Current Status</label>'+sel('m_stageVal',ONBOARDING_STAGES,r['Current Status']||'Documentation')
       +'<div class="hintline">Saving sets next follow-up +24h.</div>'
-      +'<label>Onboarding Status</label>'+sel('m_onbStatus',['Under Process','Done','Not Interested'],r['Onboarding Status']||'Under Process')
+      +'<label>Onboarding Status</label>'+sel('m_onbStatus',['Under Process','Done','Not Required'],r['Onboarding Status']||'Under Process')
       +'<label>Full Detailed Remarks <span style="color:var(--err)">*</span></label><textarea id="m_remarks" required>'+esc(r['Last Remarks']||'')+'</textarea>'
       +'<label>Wealth Manager</label>'+coordSelect('m_assignedTo','wealthManager',r['Assigned To']||'')
       +'<label>Upload Document <span class="hintline">'+(r['Document']?'(replace)':'(optional)')+'</span></label><input type="file" id="m_file">'
@@ -1013,7 +1024,7 @@ function openEdit(sys,clientId){
   // Investment Status note
   const invSel=document.getElementById('m_invStatus');
   const invNote=document.getElementById('invStNote');
-  function onInvChange(){ const v=invSel.value; invNote.textContent=v==='Monthly'?'Client Monthly tab me chala jayega.':v==='Not Interested'?'Client Not Interested tab me chala jayega.':''; invNote.style.color=v==='Active'?'':'var(--accent-d)'; }
+  function onInvChange(){ const v=invSel.value; invNote.textContent=v==='Monthly'?'Client Monthly tab me chala jayega.':v==='Not Required'?'Client Not Required tab me chala jayega.':''; invNote.style.color=v==='Active'?'':'var(--accent-d)'; }
   if(invSel){ invSel.addEventListener('change',onInvChange); onInvChange(); }
 
   // Lead status lock logic
@@ -1024,6 +1035,7 @@ function openEdit(sys,clientId){
       document.getElementById('notPickedNote').style.display=(v==='Not Picked')?'block':'none';
       document.getElementById('timeZoomNote').style.display=(v==='Time Given for Zoom')?'block':'none';
       document.getElementById('onbNote').style.display=(v==='Onboarding')?'block':'none';
+      document.getElementById('wmSelectWrap').style.display=(v==='Onboarding')?'block':'none';
       const ef=document.getElementById('extraFields');
       ef.style.opacity=(v==='Not Picked')?'0.4':'1';
       ef.style.pointerEvents=(v==='Not Picked')?'none':'auto';
@@ -1050,6 +1062,7 @@ function openEdit(sys,clientId){
     if(pr&&pr!=='—') body.productive=pr;
     if(sys.type==='lead'){
       body.status=val('m_status');
+      const lt=val('m_leadtime'); if(lt&&lt!=='—') body.leadTime=lt;
       if(body.status==='Time Given for Zoom'){
         closeModal(); toast('Sending to Zoom FMS…');
         await writeThenRefresh({action:'updateRow',stage:'lead',lane:sys.lane,clientId:clientId,remarks:remarks,investment:body.investment,investmentStatus:body.investmentStatus,status:body.status,contactMode:body.contactMode,productive:body.productive});
@@ -1057,10 +1070,11 @@ function openEdit(sys,clientId){
         toast('Zoom follow-up shuru ho gaya'); return;
       }
       if(body.status==='Onboarding'){
+        const selWM=val('m_wm');
         closeModal(); toast('Sending to Outgoing Onboarding…');
         await writeThenRefresh({action:'updateRow',stage:'lead',lane:sys.lane,clientId:clientId,remarks:remarks,investment:body.investment,investmentStatus:body.investmentStatus,status:body.status,contactMode:body.contactMode,productive:body.productive});
-        await writeThenRefresh({action:'moveLeadToOutgoing',lane:sys.lane,clientId:clientId,nextPlanned:''});
-        toast('Sent to Outgoing Onboarding — WM assigned'); return;
+        await writeThenRefresh({action:'moveLeadToOutgoing',lane:sys.lane,clientId:clientId,nextPlanned:'',preferredWM:selWM});
+        toast('Sent to Outgoing Onboarding'+(selWM?' — '+selWM:' (auto assigned)')); return;
       }
     }
     if(sys.type==='zoom'){ body.status=val('m_status'); body.onboardingStart=val('m_onb');
